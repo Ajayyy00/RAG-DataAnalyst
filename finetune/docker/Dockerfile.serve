@@ -1,0 +1,51 @@
+# ── Text-to-SQL Inference Server Container ───────────────────────────────────
+# Lightweight serving container for fine-tuned CodeLlama-7B
+
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04 AS base
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PIP_NO_CACHE_DIR=1
+ENV MODEL_PATH=/model
+ENV HOST=0.0.0.0
+ENV PORT=9000
+
+# System dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-dev \
+    python3-pip \
+    libgomp1 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN ln -sf /usr/bin/python3.11 /usr/bin/python && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python3
+
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash appuser
+
+WORKDIR /app
+
+# Install inference dependencies only
+COPY requirements-serve.txt .
+RUN pip install --upgrade pip && pip install -r requirements-serve.txt
+
+# Copy inference code
+COPY inference/ ./inference/
+COPY data/prepare_dataset.py ./data/
+
+RUN chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 9000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:9000/health || exit 1
+
+CMD python inference/pipeline.py \
+    --model-path ${MODEL_PATH} \
+    --serve \
+    --host ${HOST} \
+    --port ${PORT}

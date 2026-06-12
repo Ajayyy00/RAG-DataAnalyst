@@ -1,0 +1,83 @@
+# QLoRA Fine-Tuning Configuration for CodeLlama-7B → Text-to-SQL
+# Target: 80%+ execution accuracy on Spider benchmark
+
+model:
+  base_model: "codellama/CodeLlama-7b-hf"
+  model_max_length: 2048
+  torch_dtype: "float16"
+  device_map: "auto"
+
+quantization:
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "float16"
+  bnb_4bit_use_double_quant: true
+
+lora:
+  r: 64
+  lora_alpha: 128
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  lora_dropout: 0.05
+  bias: "none"
+  task_type: "CAUSAL_LM"
+
+data:
+  spider_path: "data/spider"
+  wikisql_path: "data/wikisql"
+  max_train_samples: null      # null = use all
+  max_eval_samples: 1000
+  train_split_ratio: 0.95
+  prompt_template: "spider_schema"  # spider_schema | simple
+  include_schema: true
+  max_schema_tables: 10
+
+training:
+  output_dir: "outputs/qlora-codellamа-7b-text2sql"
+  num_train_epochs: 3
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 8   # effective batch = 32
+  gradient_checkpointing: true
+  optim: "paged_adamw_32bit"
+  learning_rate: 2.0e-4
+  weight_decay: 0.001
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+  fp16: true
+  bf16: false
+  group_by_length: true
+  save_strategy: "steps"
+  save_steps: 500
+  eval_strategy: "steps"
+  eval_steps: 250
+  logging_steps: 50
+  load_best_model_at_end: true
+  metric_for_best_model: "eval_loss"
+  report_to: "tensorboard"
+  dataloader_num_workers: 4
+  remove_unused_columns: false
+
+merging:
+  merge_adapters: true
+  output_dir: "outputs/merged-codellamа-7b-text2sql"
+
+inference:
+  max_new_tokens: 512
+  temperature: 0.1
+  top_p: 0.9
+  do_sample: false
+  repetition_penalty: 1.1
+
+evaluation:
+  spider_db_path: "data/spider/database"
+  wikisql_db_path: "data/wikisql/databases"
+  timeout_seconds: 30
+  num_processes: 4

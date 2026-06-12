@@ -1,0 +1,96 @@
+# Text-to-SQL Fine-Tuning & Serving Stack
+version: "3.9"
+
+services:
+
+  # ── Training Job ──────────────────────────────────────────────────
+  trainer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.train
+    container_name: text2sql_trainer
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - HF_HOME=/workspace/.cache/huggingface
+      - TRANSFORMERS_CACHE=/workspace/.cache/transformers
+      - WANDB_DISABLED=true
+    volumes:
+      - ../data:/workspace/data
+      - ../outputs:/workspace/outputs
+      - ../results:/workspace/results
+      - ../logs:/workspace/logs
+      - hf_cache:/workspace/.cache
+    shm_size: "16gb"
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    command: >
+      python training/train.py
+      --config configs/qlora_config.yaml
+    profiles: ["train"]
+
+  # ── Evaluation Job ────────────────────────────────────────────────
+  evaluator:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.train
+    container_name: text2sql_evaluator
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - HF_HOME=/workspace/.cache/huggingface
+    volumes:
+      - ../data:/workspace/data
+      - ../outputs:/workspace/outputs
+      - ../results:/workspace/results
+      - hf_cache:/workspace/.cache
+    shm_size: "8gb"
+    command: >
+      python evaluation/eval_spider.py
+      --model-path /workspace/outputs/final
+      --spider-dir /workspace/data/spider
+      --output-file /workspace/results/eval_results.json
+    profiles: ["eval"]
+
+  # ── Inference Server ──────────────────────────────────────────────
+  inference:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.serve
+    container_name: text2sql_server
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - MODEL_PATH=/model
+      - HOST=0.0.0.0
+      - PORT=9000
+    volumes:
+      - ${MODEL_DIR:-../outputs/merged-codellama-7b}:/model:ro
+    ports:
+      - "9000:9000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+    profiles: ["serve"]
+
+  # ── TensorBoard ───────────────────────────────────────────────────
+  tensorboard:
+    image: tensorflow/tensorflow:latest
+    container_name: text2sql_tensorboard
+    command: tensorboard --logdir /logs --host 0.0.0.0 --port 6006
+    volumes:
+      - ../outputs:/logs:ro
+    ports:
+      - "6006:6006"
+    restart: unless-stopped
+    profiles: ["train", "monitor"]
+
+volumes:
+  hf_cache:
+    name: text2sql_hf_cache

@@ -1,0 +1,55 @@
+# ── Text-to-SQL QLoRA Training Container ─────────────────────────────────────
+# Base: PyTorch + CUDA 12.1 for A100/H100 GPUs
+# Includes: transformers, peft, bitsandbytes, datasets, wandb
+
+FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04 AS base
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PIP_NO_CACHE_DIR=1
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# System dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-dev \
+    python3-pip \
+    git \
+    git-lfs \
+    curl \
+    wget \
+    build-essential \
+    libgomp1 \
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Symlink python
+RUN ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
+    ln -sf /usr/bin/python3 /usr/bin/python
+
+WORKDIR /workspace
+
+# Install pip packages
+COPY requirements-train.txt .
+RUN pip install --upgrade pip && \
+    pip install -r requirements-train.txt
+
+# Copy project
+COPY . .
+
+# Create directories
+RUN mkdir -p \
+    data/spider \
+    data/wikisql \
+    data/processed \
+    outputs \
+    results \
+    logs
+
+# Make scripts executable
+RUN chmod +x scripts/*.sh 2>/dev/null || true
+
+# Default: train with config
+CMD ["python", "training/train.py", "--config", "configs/qlora_config.yaml"]
