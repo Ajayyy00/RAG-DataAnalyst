@@ -118,24 +118,16 @@ class EmbeddingService:
         show_progress: bool = False,
     ) -> list[list[float]]:
         """
-        Async wrapper — offloads CPU-bound encoding to a thread pool so the
-        event loop is not blocked during batch embedding.
+        Runs directly on the main thread to avoid PyTorch + ThreadPoolExecutor deadlocks on Windows.
         """
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None,
-            lambda: self.encode_batch(
-                texts,
-                batch_size=batch_size,
-                normalize=normalize,
-                show_progress=show_progress,
-            ),
+        return self.encode_batch(
+            texts,
+            batch_size=batch_size,
+            normalize=normalize,
+            show_progress=show_progress,
         )
 
     async def encode_single_async(self, text: str, normalize: bool = True) -> list[float]:
-        """Async single-text encoder — non-blocking."""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None,
-            lambda: self.encode_single(text, normalize=normalize),
-        )
+        """Runs directly on the main thread to avoid PyTorch + ThreadPoolExecutor deadlocks on Windows."""
+        return self.encode_single(text, normalize=normalize)
+

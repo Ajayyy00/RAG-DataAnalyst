@@ -78,7 +78,7 @@ class AuthService:
             .values(last_login_at=datetime.now(timezone.utc))
         )
 
-        token_data = {"sub": str(user.id), "role": user.role, "email": user.email}
+        token_data = {"sub": str(user.id), "role": user.role.value if hasattr(user.role, "value") else user.role, "email": user.email}
         access_token = create_access_token(token_data)
         refresh_token = create_refresh_token(token_data)
 

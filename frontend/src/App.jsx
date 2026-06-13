@@ -4,6 +4,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Chat from './pages/Chat'
 import History from './pages/History'
+import KnowledgeGraph from './pages/KnowledgeGraph'
 import AppLayout from './components/layout/AppLayout'
 
 function ProtectedRoute({ children }) {
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="chat" element={<Chat />} />
           <Route path="chat/:sessionId" element={<Chat />} />
           <Route path="history" element={<History />} />
+          <Route path="kg" element={<KnowledgeGraph />} />
         </Route>
         <Route path="*" element={<Navigate to="/chat" replace />} />
       </Routes>

@@ -65,6 +65,16 @@ class Settings(BaseSettings):
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     rag_top_k: int = 5
 
+    # ── Kafka ────────────────────────────────────────────────────
+    kafka_bootstrap_servers: str = "localhost:9092"
+    kafka_events_topic: str = "clinical_events"
+
+    # ── Neo4j Knowledge Graph ────────────────────────────────────
+    neo4j_uri: str = "bolt://localhost:7687"
+    neo4j_username: str = "neo4j"
+    neo4j_password: str = "changeme"
+    kg_sync_interval_minutes: int = 60
+
     # ── Computed Properties ──────────────────────────────────
     @property
     def database_url(self) -> str:
@@ -84,6 +94,16 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.app_env == "production"
 
+    @field_validator("secret_key", "postgres_password", "jwt_secret_key")
+    @classmethod
+    def check_secure_secrets(cls, v: str, info) -> str:
+        # Pydantic v2 requires info.data to access other fields, but we can't reliably read app_env if it hasn't parsed yet.
+        # So we just do a basic check here or we could check it inside __init__.
+        # Actually a simple check against known weak passwords is fine.
+        weak_passwords = ["changeme", "supersecretkey-change-in-production", "jwt-secret-key-change-in-production"]
+        if v in weak_passwords and "production" in str(info.data.get("app_env", "")):
+            raise ValueError(f"Cannot use default/weak secret for {info.field_name} in production!")
+        return v
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

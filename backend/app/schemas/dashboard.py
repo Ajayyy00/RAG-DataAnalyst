@@ -9,6 +9,14 @@ class PanelSize(BaseModel):
     row_span: int = 2
 
 
+class DashboardFilter(BaseModel):
+    id: str
+    label: str
+    column_name: str
+    filter_type: str = "dropdown"  # 'date_range', 'dropdown', 'multiselect'
+    options: List[str] = []
+
+
 class DashboardPanel(BaseModel):
     id: str
     title: str
@@ -42,6 +50,7 @@ class DashboardResponse(BaseModel):
     summary: str = ""
     panels: List[DashboardPanel] = []
     layout: DashboardLayout = DashboardLayout()
+    filters: List[DashboardFilter] = []
     total_rows: int = 0
 
 

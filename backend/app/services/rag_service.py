@@ -392,12 +392,25 @@ class RAGService:
         self,
         question: str,
         top_k: Optional[int] = None,
+        user_role: str = "analyst"
     ) -> str:
         """
         Convenience method matching the original API signature.
         Returns only the context string (for backward compatibility with chat.py).
         """
         _, context = self.retrieve(question, top_k=top_k)
+        
+        # Role-based Schema Filtering
+        if user_role == "nurse":
+            # Nurse should not see claims
+            context = context.replace("claims", "redacted_financial_table")
+        elif user_role == "analyst":
+            # Analyst should not see PII
+            context = context.replace("mrn", "[REDACTED_PII]")
+            context = context.replace("first_name", "[REDACTED_PII]")
+            context = context.replace("last_name", "[REDACTED_PII]")
+            context = context.replace("ssn", "[REDACTED_PII]")
+            
         return context
 
     # ── Context formatting ─────────────────────────────────────────────────────

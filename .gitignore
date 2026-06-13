@@ -38,3 +38,12 @@
 # OS files
 .DS_Store
 Thumbs.db
+
+# Logs
+**/*.log
+
+# Temporary / Scratch scripts
+backend/diagnose_imports.py
+backend/run_sync.py
+backend/run_uvicorn_flushed.py
+

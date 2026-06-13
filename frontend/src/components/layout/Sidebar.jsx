@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { LayoutDashboard, MessageSquare, History, Plus, Trash2, LogOut, Activity } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, History, Plus, Trash2, LogOut, Activity, Share2 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { useSessionStore } from '../../store/sessionStore'
 import { useChatStore } from '../../store/chatStore'
@@ -10,6 +10,7 @@ import toast from 'react-hot-toast'
 const NAV = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/chat',      icon: MessageSquare,   label: 'AI Copilot' },
+  { to: '/kg',        icon: Share2,          label: 'Knowledge Graph' },
   { to: '/history',   icon: History,         label: 'History' },
 ]
 

@@ -106,14 +106,45 @@ async def seed_data():
 
                 # Maybe a diagnosis
                 if random.random() > 0.3:
+                    icd_map = {
+                        "E11.9": "Type 2 Diabetes",
+                        "I10": "Hypertension",
+                        "I25.10": "Heart Disease",
+                        "J45.909": "Asthma",
+                        "E78.5": "Hyperlipidemia",
+                        "K21.9": "GERD"
+                    }
+                    code = random.choice(list(icd_map.keys()))
                     diag = Diagnosis(
                         encounter_id=enc.id,
                         patient_id=p.id,
-                        icd10_code=random.choice(["E11.9", "I10", "J45.909", "E78.5", "K21.9"]), # E11.9 is Type 2 Diabetes
-                        icd10_desc=fake.sentence(nb_words=4),
+                        icd10_code=code,
+                        icd10_desc=icd_map[code],
                         diagnosis_type="Primary"
                     )
                     db.add(diag)
+
+                # Maybe some medications
+                if random.random() > 0.4:
+                    med_map = [
+                        ("Metformin", "500 mg"),
+                        ("Lisinopril", "10 mg"),
+                        ("Atorvastatin", "20 mg"),
+                        ("Albuterol", "90 mcg"),
+                        ("Omeprazole", "40 mg"),
+                        ("Aspirin", "81 mg")
+                    ]
+                    med_name, dose = random.choice(med_map)
+                    from app.db.models import Medication
+                    med = Medication(
+                        encounter_id=enc.id,
+                        patient_id=p.id,
+                        drug_name=med_name,
+                        dose=dose,
+                        route="Oral",
+                        frequency="Daily"
+                    )
+                    db.add(med)
 
                 # Maybe some labs
                 if random.random() > 0.5:

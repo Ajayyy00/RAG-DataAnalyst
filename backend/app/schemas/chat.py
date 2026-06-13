@@ -6,6 +6,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from app.schemas.sql_explanation import SQLExplanation
+
 
 class QueryOptions(BaseModel):
     include_sql: bool = True
@@ -24,6 +26,9 @@ class SQLResult(BaseModel):
     generated: str
     validated: bool
     validation_notes: List[str] = []
+    optimizations: List[str] = []
+    execution_plan: Optional[Dict[str, Any]] = None
+    explanation: Optional[SQLExplanation] = None
 
 
 class QueryResultData(BaseModel):

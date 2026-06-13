@@ -14,6 +14,14 @@ if TYPE_CHECKING:
     from app.db.models.copilot import CopilotSession
 
 
+import enum
+
+class UserRole(str, enum.Enum):
+    ADMIN = "admin"
+    DOCTOR = "doctor"
+    NURSE = "nurse"
+    ANALYST = "analyst"
+
 class User(Base):
     """Application user with RBAC role assignment."""
 
@@ -31,8 +39,8 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     first_name: Mapped[str | None] = mapped_column(String(100))
     last_name: Mapped[str | None] = mapped_column(String(100))
-    # role: analyst | clinician | admin | auditor
-    role: Mapped[str] = mapped_column(String(20), default="analyst", nullable=False)
+    
+    role: Mapped[UserRole] = mapped_column(String(20), default=UserRole.ANALYST, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(

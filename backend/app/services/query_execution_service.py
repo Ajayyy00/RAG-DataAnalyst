@@ -38,6 +38,8 @@ class QueryExecutionService:
             await self.db.execute(
                 text(f"SET LOCAL statement_timeout = '{timeout_ms}ms'")
             )
+            # Enforce Read-Only transaction to prevent SQL injection data mutation
+            await self.db.execute(text("SET TRANSACTION READ ONLY"))
 
             result = await self.db.execute(text(sql))
             rows_raw = result.fetchmany(limit)

@@ -22,6 +22,14 @@ engine = create_async_engine(
     pool_recycle=1800,
 )
 
+try:
+    from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+    SQLAlchemyInstrumentor().instrument(
+        engine=engine.sync_engine,
+    )
+except ImportError:
+    pass
+
 # ── Session Factory ───────────────────────────────────────────────────────────
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,

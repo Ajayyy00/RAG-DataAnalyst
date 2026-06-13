@@ -1,0 +1,27 @@
+[
+  {
+    "id": "q1",
+    "question": "How many patients are there?",
+    "gold_sql": "SELECT count(*) FROM patients LIMIT 100;"
+  },
+  {
+    "id": "q2",
+    "question": "What is the name of the patient with the most recent admission?",
+    "gold_sql": "SELECT p.first_name, p.last_name FROM patients p JOIN encounters e ON p.id = e.patient_id WHERE e.encounter_type = 'inpatient' ORDER BY e.admit_date DESC NULLS LAST LIMIT 1;"
+  },
+  {
+    "id": "q3",
+    "question": "List all patients born after 1990-01-01.",
+    "gold_sql": "SELECT id, first_name, last_name, date_of_birth FROM patients WHERE date_of_birth > '1990-01-01' ORDER BY date_of_birth ASC LIMIT 100;"
+  },
+  {
+    "id": "q4",
+    "question": "How many encounters occurred in the cardiology department?",
+    "gold_sql": "SELECT count(e.id) FROM encounters e JOIN departments d ON e.department_id = d.id WHERE d.name ILIKE '%cardiology%' LIMIT 100;"
+  },
+  {
+    "id": "q5",
+    "question": "Show me the top 3 most common diagnoses.",
+    "gold_sql": "SELECT diagnosis_name, count(*) AS count FROM diagnoses GROUP BY diagnosis_name ORDER BY count DESC LIMIT 3;"
+  }
+]

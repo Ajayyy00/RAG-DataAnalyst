@@ -88,9 +88,27 @@ export default function Chat() {
         qc.invalidateQueries({ queryKey: ['sessions'] })
         navigate(`/chat/${sid}`, { replace: true })
       }
-      return chatApi.query(sid, question).then((r) => r.data)
+      return chatApi.query(sid, question, (agentName) => {
+        const agentMap = {
+          'schema_agent': '🧠 Schema Agent is researching...',
+          'planning_agent': '⚙️ Planning Agent is thinking...',
+          'generation_agent': '💻 Generation Agent is drafting SQL...',
+          'validation_agent': '🛡️ Validation Agent is checking for safety...',
+          'optimization_agent': '⚡ Optimization Agent is tuning...',
+          'database_execution': '🗄️ Executing query against database...',
+          'insight_generation': '📊 Generating insights and charts...'
+        }
+        setStreaming(true, agentMap[agentName] || 'Working...')
+      })
     },
     onSuccess: (data) => {
+      setStreaming(false)
+      if (!data) {
+        const msg = 'No response from the multi-agent system.'
+        addAssistantMessage({ error: msg })
+        toast.error(msg)
+        return
+      }
       const toNum = (v) => {
         if (v === null || v === undefined || v === '') return v
         const n = Number(v)
@@ -126,7 +144,8 @@ export default function Chat() {
       })
     },
     onError: (err) => {
-      const msg = err.response?.data?.message || 'Query failed. Please try again.'
+      setStreaming(false)
+      const msg = err?.message || 'Query failed. Please try again.'
       addAssistantMessage({ error: msg })
       toast.error(msg)
     },

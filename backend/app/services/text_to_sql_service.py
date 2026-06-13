@@ -259,19 +259,34 @@ class TextToSQLService:
         messages = self._build_messages(question, schema_context, history)
 
         try:
-            response = await self._client.post(
-                "/chat/completions",
-                json={
-                    "model":       settings.llm_model,
-                    "messages":    messages,
-                    "max_tokens":  settings.llm_max_tokens,
-                    "temperature": settings.llm_temperature,
-                    "stream":      False,
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
-            raw  = data["choices"][0]["message"]["content"].strip()
+            from opentelemetry import trace
+            import time
+            from app.core.telemetry import llm_generation_duration
+            
+            tracer = trace.get_tracer(__name__)
+            start_time = time.perf_counter()
+            
+            with tracer.start_as_current_span("generate_sql_llm_call") as span:
+                span.set_attribute("llm.model", settings.llm_model)
+                span.set_attribute("llm.prompt_length", len(str(messages)))
+                
+                response = await self._client.post(
+                    "/chat/completions",
+                    json={
+                        "model":       settings.llm_model,
+                        "messages":    messages,
+                        "max_tokens":  settings.llm_max_tokens,
+                        "temperature": settings.llm_temperature,
+                        "stream":      False,
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+                raw  = data["choices"][0]["message"]["content"].strip()
+                
+                duration = time.perf_counter() - start_time
+                llm_generation_duration.labels(model=settings.llm_model).observe(duration)
+                span.set_attribute("llm.response_length", len(raw))
 
         except httpx.HTTPStatusError as exc:
             log.error("LLM API error", status=exc.response.status_code)
