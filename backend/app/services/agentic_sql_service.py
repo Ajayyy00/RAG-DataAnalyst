@@ -229,10 +229,16 @@ class AgenticSQLService:
             
             # Step 3: Rewrite and suggest indexes
             result = await self.optimization_engine.optimize(sql_draft, plan_json)
-            
+            if isinstance(result, dict):
+                final_sql = result.get("optimized_sql", sql_draft)
+                index_suggestions = result.get("index_suggestions", [])
+            else:
+                final_sql = getattr(result, "optimized_sql", sql_draft)
+                index_suggestions = getattr(result, "index_suggestions", [])
+                
             return {
-                "final_sql": result.optimized_sql,
-                "index_suggestions": result.index_suggestions,
+                "final_sql": final_sql,
+                "index_suggestions": index_suggestions,
                 "execution_plan": plan_json
             }
 

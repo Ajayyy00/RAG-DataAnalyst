@@ -25,9 +25,11 @@ from app.services.conversation_history_service import ConversationHistoryService
 from app.services.insights_engine import InsightsEngine
 from app.services.query_execution_service import QueryExecutionService
 from app.services.rag_service import RAGService
+from app.services.security_layer import AISecurityLayer
 from app.services.sql_validation_service import SQLValidationService
 from app.services.text_to_sql_service import TextToSQLService
 from app.config import get_settings
+from fastapi import HTTPException
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
@@ -48,6 +50,10 @@ async def chat_query(
     """Main pipeline: NL → RAG → SQL → Validation → Execution → Chart → Insights."""
     query_id = uuid.uuid4()
     history_svc = ConversationHistoryService(db, redis)
+
+    # ── 0. Prompt Injection Check ─────────────────────────────
+    if AISecurityLayer.detect_prompt_injection(request.question):
+        raise HTTPException(status_code=403, detail="Security violation: Malicious prompt detected.")
 
     # ── 1. Session resolution ─────────────────────────────────
     if request.session_id:
@@ -133,6 +139,9 @@ async def chat_query(
     # ── 7. Query Execution ────────────────────────────────────
     executor = QueryExecutionService(db)
     result_data = await executor.execute(normalized_sql, max_rows=request.options.max_rows)
+    
+    # ── 7.5 Security Egress: PHI Redaction ────────────────────
+    result_data["rows"] = AISecurityLayer.redact_phi(result_data["rows"], current_user.role)
 
     query_result = QueryResultData(
         columns=result_data["columns"],
@@ -246,6 +255,10 @@ async def chat_query_agentic(
     query_id = uuid.uuid4()
     history_svc = ConversationHistoryService(db, redis)
 
+    # ── 0. Prompt Injection Check ─────────────────────────────
+    if AISecurityLayer.detect_prompt_injection(request.question):
+        raise HTTPException(status_code=403, detail="Security violation: Malicious prompt detected.")
+
     if request.session_id:
         session = await history_svc.get_session(request.session_id, current_user.id)
     else:
@@ -309,6 +322,9 @@ async def chat_query_agentic(
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': f'Query execution failed: {str(e)}'})}\n\n"
             return
+
+        # ── Security Egress: PHI Redaction ──
+        result_data["rows"] = AISecurityLayer.redact_phi(result_data["rows"], current_user.role)
 
         query_result = QueryResultData(
             columns=result_data["columns"], rows=result_data["rows"],

@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip wheel --timeout=120 --retries=10 --wheel-dir /app/wheels -r requirements.txt
+    pip wheel --timeout=120 --retries=10 --extra-index-url https://download.pytorch.org/whl/cpu --wheel-dir /app/wheels -r requirements.txt
 
 # ── Stage 2: Production ──────────────────────────────────────
 FROM python:3.11-slim

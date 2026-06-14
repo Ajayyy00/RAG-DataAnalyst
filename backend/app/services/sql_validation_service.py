@@ -319,6 +319,7 @@ class SQLValidationService:
                 "SQL validation failed",
                 violations=result.violations,
                 complexity=result.complexity_score,
+                audit_event="hipaa_security_alert",
             )
         else:
             logger.info(
