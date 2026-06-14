@@ -1,47 +1,82 @@
 # Healthcare Copilot
 
-Healthcare Copilot is a domain-specific, artificial intelligence-assisted application designed to translate natural language inquiries into executable SQL queries against a healthcare database. The system incorporates a multi-agent architecture, retrieval-augmented generation (RAG), and a knowledge graph to assist analysts and clinicians in extracting and understanding data securely.
+Healthcare Copilot is an enterprise-grade analytical engine designed to translate natural language inquiries into secure, executable SQL queries against a structured healthcare database. The system utilizes a multi-agent orchestration layer, retrieval-augmented generation (RAG), and a supplemental knowledge graph to assist analysts in extracting clinical data securely while maintaining strict compliance with healthcare data regulations.
 
-## System Architecture
+## 1. System Architecture
 
-The application is structured into a React-based frontend and a FastAPI backend, orchestrated via Docker.
+The application is distributed across a React-based frontend and a Python FastAPI backend, orchestrated via Docker.
 
-### Core Components
-- **Frontend**: A React application that provides a chat interface, dynamic chart rendering, and a visual knowledge graph interface.
-- **Backend**: A FastAPI server that handles query processing, routing, and system integrations.
-- **Database Layer**: PostgreSQL for structured clinical data, ChromaDB for vector-based schema retrieval, Neo4j for the knowledge graph, and Redis for caching and conversation history management.
-- **Observability**: Prometheus and Grafana for metrics and trace aggregation.
+### 1.1 Infrastructure Components
+- **Application Server**: FastAPI running via Uvicorn.
+- **Relational Database**: PostgreSQL 16 (stores structured OLAP clinical data).
+- **Vector Database**: ChromaDB (stores embeddings of database schema definitions for retrieval).
+- **Knowledge Graph**: Neo4j (stores explicit relationships between clinical entities for graph traversal).
+- **In-Memory Cache**: Redis 7 (manages session state, conversation history, and rate limiting).
+- **Observability Stack**: Prometheus (metrics scraping), Jaeger (distributed tracing), and Grafana (visualization).
 
-## Features
+### 1.2 Pipeline Workflow
+```mermaid
+graph TD;
+    User[User Input] --> Security[AI Security Layer];
+    Security -- Validated --> RAG[ChromaDB Schema Retrieval];
+    RAG --> Agentic[LangGraph Agentic Pipeline];
+    Agentic --> SQL_Validation[AST SQL Validator];
+    SQL_Validation -- Safe --> Postgres[PostgreSQL Execution];
+    Postgres --> Egress_Security[PHI Redaction Filter];
+    Egress_Security --> Insights[Insight & Chart Generator];
+    Insights --> User;
+```
 
-### Natural Language to SQL Processing
-The system accepts natural language questions and converts them into PostgreSQL queries using a Large Language Model. The generation process utilizes Retrieval-Augmented Generation (RAG) against ChromaDB to supply the model with accurate schema definitions and contextual metadata.
+## 2. Core Functional Modules
 
-### Agentic Workflow Execution
-For complex queries, the system employs a LangGraph-based multi-agent pipeline. This pipeline executes a sequential workflow: schema extraction, execution plan generation, SQL drafting, SQL validation, and query optimization. 
+### 2.1 Natural Language to SQL Processing (RAG)
+The translation of natural language to SQL relies on Retrieval-Augmented Generation. Upon receiving a query, the system vectorizes the input using the `sentence-transformers/all-MiniLM-L6-v2` embedding model. It queries ChromaDB to retrieve the most semantically relevant database schemas and Table Data Definition Language (DDL) statements. This context is injected into the prompt of the Large Language Model to ensure syntactical and structural accuracy of the generated SQL.
 
-### Data Insights and Visualization
-Upon successful execution of a generated SQL query, the system analyzes the result set to generate automated insights and context-aware summaries. It also recommends and configures appropriate chart types based on the data structure.
+### 2.2 Agentic Workflow Execution
+Complex queries bypass the standard pipeline and are routed to a LangGraph-based multi-agent architecture. This system models the workflow as a state graph with the following sequential nodes:
+1. **Schema Extraction**: Identifies required tables.
+2. **Query Planning**: Outlines the logical steps required to answer the prompt.
+3. **SQL Generation**: Drafts the initial SQL query.
+4. **Validation**: Ensures the query is syntactically valid and executes without failure.
+5. **Optimization**: Executes a PostgreSQL `EXPLAIN (FORMAT JSON)` on the draft query. An optimization agent analyzes the query cost, sequential scans, and execution plan to rewrite the query or recommend optimal `CREATE INDEX` commands.
 
-### Knowledge Graph Integration
-The system synchronizes clinical entities into a Neo4j knowledge graph. This enables relationship-based reasoning, allowing the system to traverse patient histories and provider networks for complex queries that extend beyond standard relational joins.
+### 2.3 AI Security and Compliance Layer (HIPAA Enforcement)
+The system enforces strict security boundaries designed for protected health environments:
 
-### Security and Compliance Layer
-The application includes a strict security layer designed for healthcare environments and HIPAA compliance:
-- **Prompt Injection Prevention**: User inputs are scanned using heuristic rules to detect and reject prompt injections and jailbreak attempts prior to model execution.
-- **SQL Execution Safeguards**: An Abstract Syntax Tree (AST) parser validates all generated SQL to guarantee that only `SELECT` operations are permitted. It actively blocks Data Manipulation Language (DML), Data Definition Language (DDL), system catalog access, and common SQL injection patterns.
-- **Data Leakage Prevention and PHI Redaction**: Result sets are filtered before egress. If a user is assigned an analyst role, Protected Health Information (PHI) such as Social Security Numbers, Medical Record Numbers, and contact details are automatically masked using regular expressions and column-level heuristics.
-- **Audit Logging**: All queries, validation failures, and security events are logged with structured metadata to maintain an audit trail.
+- **Ingress Filtering (Prompt Injection)**: Before processing, heuristic patterns scan user inputs to detect jailbreak attempts, system prompt overrides, or destructive commands (e.g., `drop table`).
+- **Abstract Syntax Tree (AST) Guardrails**: Prior to database execution, the generated SQL is parsed using `sqlglot`. The validation engine actively rejects Data Manipulation Language (DML) and Data Definition Language (DDL). It strictly enforces `SELECT` operations, blocks system catalog access (`pg_catalog`), and checks against tautology-based SQL injections (e.g., `1=1`).
+- **Egress Filtering (PHI Redaction)**: Database result sets pass through a redaction engine before reaching the client. Based on Role-Based Access Control (RBAC), if the requesting user possesses an `analyst` role, all fields containing Protected Health Information (PHI)—such as Medical Record Numbers (MRN), Social Security Numbers (SSN), names, and contact details—are automatically masked.
+- **Audit Logging**: All queries, validation violations, and security events are logged with structured metadata, tagged explicitly for HIPAA audit aggregation.
 
-## Deployment Instructions
+### 2.4 Data Visualization and Insights Engine
+Following query execution, the structured result set is evaluated by a Chart Advisor service. The service inspects data types and column counts to heuristically determine the optimal visualization format (e.g., assigning continuous time-series data to line charts, categorical aggregations to bar or pie charts). Concurrently, an Insight Engine analyzes the statistical variance within the data to return a text-based analytical summary.
 
-Ensure Docker and Docker Compose are installed on the host machine.
+### 2.5 Knowledge Graph Integration
+To supplement relational queries, the system synchronizes core clinical entities (Patients, Providers, Encounters, Diagnoses) into a Neo4j Knowledge Graph. This allows the system to perform complex relationship traversals, such as identifying shared patient encounters among networks of providers, which are computationally expensive via standard relational `JOIN` operations.
 
-1. Navigate to the project root directory.
-2. Build and start the services using Docker Compose:
-   `docker compose up --build -d`
-3. Access the application components:
-   - Frontend: `http://localhost:5173`
-   - Backend API Docs: `http://localhost:8001/docs`
-   - Neo4j Browser: `http://localhost:7474`
-   - Grafana Dashboard: `http://localhost:3000`
+## 3. Database Schema Overview
+
+The underlying PostgreSQL database represents a standard healthcare OLAP schema, utilizing UUID primary keys and extensive foreign key relationships. Primary domains include:
+- **Reference Data**: `Facilities`, `Departments`, `Providers`.
+- **Core Clinical Data**: `Patients`, `Encounters`.
+- **Clinical Events**: `Diagnoses`, `Procedures`, `Medications`, `Lab_Results`, `Vital_Signs`.
+- **Financial Data**: `Claims`.
+
+## 4. Local Deployment Instructions
+
+The application requires Docker and Docker Compose.
+
+1. Clone the repository and navigate to the project root.
+2. Initialize the environment:
+   ```bash
+   docker compose up --build -d
+   ```
+3. Wait for the containers to reach a healthy state. Verify logs using:
+   ```bash
+   docker compose logs -f backend
+   ```
+4. Access the respective services via their exposed ports:
+   - Client Interface (Frontend): `http://localhost:5173`
+   - API Documentation (Swagger): `http://localhost:8001/docs`
+   - Neo4j Graph Browser: `http://localhost:7474`
+   - Observability Dashboard: `http://localhost:3000`
