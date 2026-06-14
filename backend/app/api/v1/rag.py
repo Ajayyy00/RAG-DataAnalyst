@@ -117,7 +117,7 @@ async def get_context(
     - Debugging SQL generation quality
     """
     rag = RAGService()
-    retrieved, context = rag.retrieve(q, top_k=top_k)
+    retrieved, context = await rag.retrieve(q, top_k=top_k)
     return {
         "question": q,
         "retrieved_tables": [

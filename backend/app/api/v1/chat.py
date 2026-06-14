@@ -72,10 +72,69 @@ async def chat_query(
         content=request.question,
     )
 
+    # ── 2.5. Intent Routing ────────────────────────────────────
+    from app.services.router_service import RouterService
+    router_svc = RouterService()
+    try:
+        intent = await router_svc.classify_intent(request.question)
+    finally:
+        await router_svc.close()
+
+    if intent == "conversational":
+        import httpx
+        async with httpx.AsyncClient(
+            base_url=settings.llm_base_url,
+            headers={
+                "Authorization": f"Bearer {settings.llm_api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=settings.llm_timeout_seconds,
+        ) as client:
+            response = await client.post(
+                "/chat/completions",
+                json={
+                    "model": settings.llm_model,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are the Healthcare Copilot Assistant. You help clinical analysts query the healthcare analytical database.\n"
+                                "You can answer clinical data questions like: 'How many diabetic patients do we have?', 'Show top medications prescribed last year', 'Find 30-day readmissions by department'.\n"
+                                "If the user is greeting or chit-chatting, respond politely and explain how you can help them analyze clinical data."
+                            ),
+                        },
+                        {"role": "user", "content": request.question},
+                    ],
+                    "max_tokens": 512,
+                    "temperature": settings.llm_temperature,
+                    "stream": False,
+                },
+            )
+            response.raise_for_status()
+            direct_reply = response.json()["choices"][0]["message"]["content"].strip()
+
+        await history_svc.save_message(
+            session_id=session.id,
+            role="assistant",
+            content=direct_reply,
+        )
+        return ChatQueryResponse(
+            query_id=query_id,
+            session_id=session.id,
+            question=request.question,
+            insights=[direct_reply],
+            metadata=QueryMeta(
+                model=settings.llm_model,
+                schema_chunks_used=0,
+                created_at=datetime.now(timezone.utc),
+                query_id=query_id,
+            ),
+        )
+
     # ── 3. Retrieve schema context (RAG) ──────────────────────
     rag_svc = RAGService()
     try:
-        retrieved_tables, schema_context = rag_svc.retrieve(
+        retrieved_tables, schema_context = await rag_svc.retrieve(
             question=request.question,
             top_k=settings.rag_top_k,
         )
@@ -142,7 +201,10 @@ async def chat_query(
     # ── 7. Query Execution ────────────────────────────────────
     executor = QueryExecutionService(db)
     result_data = await executor.execute(
-        normalized_sql, max_rows=request.options.max_rows
+        normalized_sql,
+        max_rows=request.options.max_rows,
+        user_role=current_user.role,
+        user_id=current_user.id,
     )
 
     # ── 7.5 Security Egress: PHI Redaction ────────────────────
@@ -288,6 +350,68 @@ async def chat_query_agentic(
     )
 
     async def event_stream():
+        # Check classification
+        from app.services.router_service import RouterService
+        router_svc = RouterService()
+        try:
+            intent = await router_svc.classify_intent(request.question)
+        finally:
+            await router_svc.close()
+
+        if intent == "conversational":
+            yield f"data: {json.dumps({'type': 'progress', 'agent': 'intent_router', 'status': 'conversational_matched'})}\n\n"
+            import httpx
+            async with httpx.AsyncClient(
+                base_url=settings.llm_base_url,
+                headers={
+                    "Authorization": f"Bearer {settings.llm_api_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=settings.llm_timeout_seconds,
+            ) as client:
+                response = await client.post(
+                    "/chat/completions",
+                    json={
+                        "model": settings.llm_model,
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": (
+                                    "You are the Healthcare Copilot Assistant. You help clinical analysts query the healthcare analytical database.\n"
+                                    "Explain politely how you can help them analyze clinical data using questions."
+                                ),
+                            },
+                            {"role": "user", "content": request.question},
+                        ],
+                        "max_tokens": 512,
+                        "temperature": settings.llm_temperature,
+                        "stream": False,
+                    },
+                )
+                response.raise_for_status()
+                direct_reply = response.json()["choices"][0]["message"]["content"].strip()
+
+            await history_svc.save_message(
+                session_id=session.id,
+                role="assistant",
+                content=direct_reply,
+            )
+
+            resp = ChatQueryResponse(
+                query_id=query_id,
+                session_id=session.id,
+                question=request.question,
+                insights=[direct_reply],
+                metadata=QueryMeta(
+                    model=settings.llm_model,
+                    schema_chunks_used=0,
+                    created_at=datetime.now(timezone.utc),
+                    query_id=query_id,
+                ),
+            )
+            yield f"data: {json.dumps({'type': 'result', 'data': resp.model_dump(mode='json')})}\n\n"
+            return
+
         agentic_svc = AgenticSQLService(db, current_user)
         final_sql = None
 
@@ -338,7 +462,10 @@ async def chat_query_agentic(
             async with AsyncSessionLocal() as exec_db:
                 executor = QueryExecutionService(exec_db)
                 result_data = await executor.execute(
-                    final_sql, max_rows=request.options.max_rows
+                    final_sql,
+                    max_rows=request.options.max_rows,
+                    user_role=current_user.role,
+                    user_id=current_user.id,
                 )
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': f'Query execution failed: {str(e)}'})}\n\n"

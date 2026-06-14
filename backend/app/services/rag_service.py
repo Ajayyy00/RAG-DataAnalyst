@@ -314,7 +314,46 @@ class RAGService:
 
     # ── Retrieval ──────────────────────────────────────────────────────────────
 
-    def retrieve(
+    async def _generate_hypothetical_sql(self, question: str) -> str:
+        """
+        Generate a hypothetical SQL query from the natural language question
+        to be used as a search document (HyDE technique).
+        """
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.post(
+                    f"{settings.llm_base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {settings.llm_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": settings.llm_model,
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": (
+                                    "You are a helpful assistant. Convert the user's healthcare data question "
+                                    "into a hypothetical PostgreSQL query. Do not validate the schema. "
+                                    "Output ONLY the SQL query. No markdown, no notes, no commentary."
+                                )
+                            },
+                            {"role": "user", "content": question}
+                        ],
+                        "max_tokens": 128,
+                        "temperature": 0.0,
+                    }
+                )
+                response.raise_for_status()
+                sql = response.json()["choices"][0]["message"]["content"].strip()
+                log.info("HyDE generated hypothetical SQL", hypothetical_sql=sql[:100])
+                return sql
+        except Exception as exc:
+            log.warning("HyDE generation failed, falling back to raw question", error=str(exc))
+            return question
+
+    async def retrieve(
         self,
         question: str,
         top_k: Optional[int] = None,
@@ -332,8 +371,11 @@ class RAGService:
         over_fetch = min(k * 3, 20)  # over-fetch then re-rank by table
 
         try:
+            # HyDE: Generate hypothetical SQL document for searching
+            search_doc = await self._generate_hypothetical_sql(question)
+
             embedder = self._get_embedder()
-            query_vec = embedder.encode_single(question)
+            query_vec = await embedder.encode_single_async(search_doc)
             collection = self._get_collection()
 
             results = collection.query(
@@ -400,14 +442,14 @@ class RAGService:
         context = self._format_context(retrieved, extras, include_relationships)
         return retrieved, context
 
-    def retrieve_schema_context(
+    async def retrieve_schema_context(
         self, question: str, top_k: Optional[int] = None, user_role: str = "analyst"
     ) -> str:
         """
         Convenience method matching the original API signature.
         Returns only the context string (for backward compatibility with chat.py).
         """
-        _, context = self.retrieve(question, top_k=top_k)
+        _, context = await self.retrieve(question, top_k=top_k)
 
         # Role-based Schema Filtering
         if user_role == "nurse":

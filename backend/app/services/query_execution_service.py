@@ -21,7 +21,13 @@ class QueryExecutionService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def execute(self, sql: str, max_rows: int | None = None) -> Dict[str, Any]:
+    async def execute(
+        self,
+        sql: str,
+        max_rows: int | None = None,
+        user_role: str | None = None,
+        user_id: str | None = None,
+    ) -> Dict[str, Any]:
         """
         Execute a validated SQL query and return structured results.
 
@@ -38,6 +44,18 @@ class QueryExecutionService:
             )
             # Enforce Read-Only transaction to prevent SQL injection data mutation
             await self.db.execute(text("SET TRANSACTION READ ONLY"))
+
+            # Inject session settings to support PostgreSQL Row-Level Security (RLS)
+            if user_role:
+                await self.db.execute(
+                    text("SELECT set_config('app.current_user_role', :role, true)"),
+                    {"role": str(user_role)},
+                )
+            if user_id:
+                await self.db.execute(
+                    text("SELECT set_config('app.current_user_id', :uid, true)"),
+                    {"uid": str(user_id)},
+                )
 
             result = await self.db.execute(text(sql))
             rows_raw = result.fetchmany(limit)

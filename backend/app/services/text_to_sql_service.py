@@ -281,23 +281,13 @@ class TextToSQLService:
         """
         history = conversation_history or []
 
-        # 1. Check Redis Cache for exact match
-        cache_key = None
+        # 1. Check Redis Cache using SemanticCache (cosine similarity)
+        from app.services.semantic_cache import SemanticCache
+        sem_cache = SemanticCache(self.redis)
         if self.redis:
-            query_hash = hashlib.md5(question.strip().lower().encode()).hexdigest()
-            cache_key = f"sql_cache:{query_hash}"
-            try:
-                cached_sql = await self.redis.get(cache_key)
-                if cached_sql:
-                    log.info("SQL cache hit", question_preview=question[:80])
-                    sql = (
-                        cached_sql.decode("utf-8")
-                        if isinstance(cached_sql, bytes)
-                        else cached_sql
-                    )
-                    return sql
-            except Exception as e:
-                log.warning("Redis cache error", error=str(e))
+            cached_sql = await sem_cache.get(question)
+            if cached_sql:
+                return cached_sql
 
         messages = self._build_messages(question, schema_context, history)
 
@@ -354,11 +344,8 @@ class TextToSQLService:
         )
 
         # Cache the successfully generated SQL
-        if self.redis and cache_key:
-            try:
-                await self.redis.setex(cache_key, 86400, sql)  # Cache for 24 hours
-            except Exception as e:
-                log.warning("Failed to save SQL to cache", error=str(e))
+        if self.redis:
+            await sem_cache.set(question, sql)
 
         return sql
 

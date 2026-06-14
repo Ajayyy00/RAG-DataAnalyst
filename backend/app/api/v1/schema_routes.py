@@ -81,5 +81,5 @@ async def search_schema(
     current_user: CurrentUser = None,
 ) -> List[str]:
     rag = RAGService()
-    context = rag.retrieve_schema_context(q, top_k=top_k)
+    context = await rag.retrieve_schema_context(q, top_k=top_k)
     return context.split("\n\n") if context else []
