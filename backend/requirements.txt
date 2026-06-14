@@ -49,6 +49,7 @@ python-dateutil==2.9.0
 aiokafka==0.10.0
 websockets==12.0
 neo4j==5.20.0
+setuptools<=80.10.2
 langchain-community==0.2.11
 apscheduler==3.10.4
 langgraph==0.1.7
