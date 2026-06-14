@@ -53,8 +53,8 @@ settings = get_settings()
 #  Constants
 # ──────────────────────────────────────────────────────────────
 
-MAX_PREVIEW_ROWS   = 30     # rows sent to LLM (avoid context overflow)
-MAX_DISTINCT_SHOWN = 10     # distinct values shown per column in profile
+MAX_PREVIEW_ROWS = 30  # rows sent to LLM (avoid context overflow)
+MAX_DISTINCT_SHOWN = 10  # distinct values shown per column in profile
 INSIGHT_MAX_TOKENS = 1200
 INSIGHT_TEMPERATURE = 0.25  # Low temp → consistent, factual clinical output
 
@@ -97,10 +97,11 @@ Output ONLY the JSON. No markdown fences, no preamble, no trailing text.
 #  Data Profiler — statistical characterisation of result set
 # ──────────────────────────────────────────────────────────────
 
+
 @dataclass
 class ColumnProfile:
     name: str
-    dtype: str            # "numeric" | "temporal" | "categorical" | "mixed"
+    dtype: str  # "numeric" | "temporal" | "categorical" | "mixed"
     count: int
     null_count: int
     null_pct: float
@@ -129,13 +130,14 @@ class DataProfile:
 class DataProfiler:
     """Compute lightweight statistics on query result arrays."""
 
-    def profile(
-        self, columns: List[str], rows: List[List[Any]]
-    ) -> DataProfile:
+    def profile(self, columns: List[str], rows: List[List[Any]]) -> DataProfile:
         if not columns or not rows:
             return DataProfile(
-                row_count=0, col_count=len(columns),
-                columns=[], has_nulls=False, is_empty=True,
+                row_count=0,
+                col_count=len(columns),
+                columns=[],
+                has_nulls=False,
+                is_empty=True,
             )
 
         n = len(rows)
@@ -163,10 +165,10 @@ class DataProfiler:
                     pass
 
             if len(floats) >= len(non_null) * 0.7 and floats:
-                cp.dtype     = "numeric"
-                cp.min_val   = round(min(floats), 4)
-                cp.max_val   = round(max(floats), 4)
-                cp.mean_val  = round(statistics.mean(floats), 4)
+                cp.dtype = "numeric"
+                cp.min_val = round(min(floats), 4)
+                cp.max_val = round(max(floats), 4)
+                cp.mean_val = round(statistics.mean(floats), 4)
                 cp.median_val = round(statistics.median(floats), 4)
                 if len(floats) > 1:
                     cp.stdev_val = round(statistics.stdev(floats), 4)
@@ -177,8 +179,16 @@ class DataProfiler:
                 cp.top_values = distinct[:MAX_DISTINCT_SHOWN]
 
                 # Detect temporal column
-                if col_name.lower() in {"date", "month", "year", "quarter",
-                                         "week", "period", "timestamp", "dt"}:
+                if col_name.lower() in {
+                    "date",
+                    "month",
+                    "year",
+                    "quarter",
+                    "week",
+                    "period",
+                    "timestamp",
+                    "dt",
+                }:
                     cp.dtype = "temporal"
                     if non_null:
                         cp.date_range = f"{non_null[0]} → {non_null[-1]}"
@@ -231,6 +241,7 @@ class DataProfiler:
 #  Prompt Builder
 # ──────────────────────────────────────────────────────────────
 
+
 class PromptBuilder:
     """Assembles the user message for the Llama 3 insights call."""
 
@@ -279,6 +290,7 @@ class PromptBuilder:
 #  Llama 3 Client
 # ──────────────────────────────────────────────────────────────
 
+
 class LlamaClient:
     """
     Async client for any OpenAI-compatible inference endpoint
@@ -302,9 +314,7 @@ class LlamaClient:
         await self.close()
 
     @retry(
-        retry=retry_if_exception_type(
-            (httpx.TimeoutException, httpx.ConnectError)
-        ),
+        retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError)),
         stop=stop_after_attempt(2),
         wait=wait_exponential(multiplier=1, min=2, max=8),
         reraise=True,
@@ -315,11 +325,11 @@ class LlamaClient:
             "model": settings.llm_model,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user",   "content": user_message},
+                {"role": "user", "content": user_message},
             ],
-            "max_tokens":  INSIGHT_MAX_TOKENS,
+            "max_tokens": INSIGHT_MAX_TOKENS,
             "temperature": INSIGHT_TEMPERATURE,
-            "stream":      False,
+            "stream": False,
         }
 
         resp = await self._client.post("/chat/completions", json=payload)
@@ -331,6 +341,7 @@ class LlamaClient:
 # ──────────────────────────────────────────────────────────────
 #  Response Parser
 # ──────────────────────────────────────────────────────────────
+
 
 class ResponseParser:
     """
@@ -383,16 +394,16 @@ class ResponseParser:
         recs = []
         for r in data.get("recommendations", []):
             if isinstance(r, dict):
-                recs.append(Recommendation(
-                    priority=r.get("priority", "medium"),
-                    action=r.get("action", ""),
-                    rationale=r.get("rationale", ""),
-                    metric=r.get("metric"),
-                ))
+                recs.append(
+                    Recommendation(
+                        priority=r.get("priority", "medium"),
+                        action=r.get("action", ""),
+                        rationale=r.get("rationale", ""),
+                        metric=r.get("metric"),
+                    )
+                )
             elif isinstance(r, str):
-                recs.append(Recommendation(
-                    priority="medium", action=r, rationale=""
-                ))
+                recs.append(Recommendation(priority="medium", action=r, rationale=""))
 
         confidence = data.get("confidence", "medium")
         if confidence not in {"high", "medium", "low"}:
@@ -403,12 +414,8 @@ class ResponseParser:
             trends=self._as_str_list(data.get("trends", [])),
             anomalies=self._as_str_list(data.get("anomalies", [])),
             recommendations=recs,
-            follow_up_questions=self._as_str_list(
-                data.get("follow_up_questions", [])
-            ),
-            data_quality_notes=self._as_str_list(
-                data.get("data_quality_notes", [])
-            ),
+            follow_up_questions=self._as_str_list(data.get("follow_up_questions", [])),
+            data_quality_notes=self._as_str_list(data.get("data_quality_notes", [])),
             confidence=confidence,
         )
 
@@ -424,6 +431,7 @@ class ResponseParser:
 # ──────────────────────────────────────────────────────────────
 #  Rule-based Fallback Engine
 # ──────────────────────────────────────────────────────────────
+
 
 class FallbackInsightEngine:
     """
@@ -467,12 +475,14 @@ class FallbackInsightEngine:
                         f"(mean={cp.mean_val}, stdev={cp.stdev_val}) — "
                         "consider investigating outlier cases."
                     )
-                    recs.append(Recommendation(
-                        priority="medium",
-                        action=f"Investigate high variability in {cp.name}",
-                        rationale="Large spread may indicate inconsistent practice or data quality issues.",
-                        metric=f"stdev={cp.stdev_val}",
-                    ))
+                    recs.append(
+                        Recommendation(
+                            priority="medium",
+                            action=f"Investigate high variability in {cp.name}",
+                            rationale="Large spread may indicate inconsistent practice or data quality issues.",
+                            metric=f"stdev={cp.stdev_val}",
+                        )
+                    )
                 if cp.min_val is not None and cp.max_val is not None:
                     trends.append(
                         f"'{cp.name}' ranges from {cp.min_val} to {cp.max_val} "
@@ -490,12 +500,14 @@ class FallbackInsightEngine:
                     f"'{cp.name}' has {cp.null_pct}% missing values — "
                     "results may be incomplete."
                 )
-                recs.append(Recommendation(
-                    priority="high",
-                    action=f"Investigate missing data in '{cp.name}'",
-                    rationale=f"{cp.null_pct}% nulls may bias aggregations.",
-                    metric=f"{cp.null_count} null rows out of {cp.count}",
-                ))
+                recs.append(
+                    Recommendation(
+                        priority="high",
+                        action=f"Investigate missing data in '{cp.name}'",
+                        rationale=f"{cp.null_pct}% nulls may bias aggregations.",
+                        metric=f"{cp.null_count} null rows out of {cp.count}",
+                    )
+                )
 
             # Categorical
             if cp.dtype == "categorical" and cp.distinct_count == 1:
@@ -526,9 +538,9 @@ class FallbackInsightEngine:
         ]
 
         confidence = (
-            "high"   if profile.row_count >= 100 else
-            "medium" if profile.row_count >= 10  else
-            "low"
+            "high"
+            if profile.row_count >= 100
+            else "medium" if profile.row_count >= 10 else "low"
         )
 
         summary_parts = [f"The query returned {profile.row_count:,} rows."]
@@ -550,6 +562,7 @@ class FallbackInsightEngine:
 #  Main Insights Engine — public API
 # ──────────────────────────────────────────────────────────────
 
+
 class InsightsEngine:
     """
     Orchestrates the full pipeline:
@@ -560,8 +573,8 @@ class InsightsEngine:
 
     def __init__(self) -> None:
         self._profiler = DataProfiler()
-        self._builder  = PromptBuilder(self._profiler)
-        self._parser   = ResponseParser()
+        self._builder = PromptBuilder(self._profiler)
+        self._parser = ResponseParser()
         self._fallback = FallbackInsightEngine()
 
     async def generate(
@@ -579,7 +592,7 @@ class InsightsEngine:
         if not rows:
             return InsightReport(
                 summary="The query returned no results. "
-                        "This may indicate no matching data for the specified criteria.",
+                "This may indicate no matching data for the specified criteria.",
                 confidence="low",
                 follow_up_questions=[
                     "Is the date range correct?",
@@ -604,7 +617,9 @@ class InsightsEngine:
             return report
 
         except (httpx.TimeoutException, httpx.ConnectError) as exc:
-            logger.warning("LLM unavailable — using rule-based fallback", error=str(exc))
+            logger.warning(
+                "LLM unavailable — using rule-based fallback", error=str(exc)
+            )
             return self._fallback.generate(question, columns, rows)
 
         except httpx.HTTPStatusError as exc:

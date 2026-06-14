@@ -61,7 +61,9 @@ class ConversationHistoryService:
         """List active sessions for a user, most recent first."""
         result = await self.db.execute(
             select(CopilotSession)
-            .where(CopilotSession.user_id == user_id, CopilotSession.is_active.is_(True))
+            .where(
+                CopilotSession.user_id == user_id, CopilotSession.is_active.is_(True)
+            )
             .order_by(CopilotSession.last_active_at.desc())
             .limit(limit)
         )
@@ -129,7 +131,7 @@ class ConversationHistoryService:
         cached = await self.redis.get(cache_key)
         if cached:
             all_messages: List[Dict[str, str]] = json.loads(cached)
-            return all_messages[-(max_turns * 2):]
+            return all_messages[-(max_turns * 2) :]
 
         messages = await self.get_messages(session_id, limit=100)
         formatted = [
@@ -144,4 +146,4 @@ class ConversationHistoryService:
             settings.session_ttl_seconds,
             json.dumps(formatted),
         )
-        return formatted[-(max_turns * 2):]
+        return formatted[-(max_turns * 2) :]

@@ -127,7 +127,8 @@ class EmbeddingService:
             show_progress=show_progress,
         )
 
-    async def encode_single_async(self, text: str, normalize: bool = True) -> list[float]:
+    async def encode_single_async(
+        self, text: str, normalize: bool = True
+    ) -> list[float]:
         """Runs directly on the main thread to avoid PyTorch + ThreadPoolExecutor deadlocks on Windows."""
         return self.encode_single(text, normalize=normalize)
-

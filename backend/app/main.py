@@ -8,10 +8,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
 
+from app.api.v1.router import api_router
 from app.config import get_settings
 from app.core.exceptions import setup_exception_handlers
 from app.core.logging import setup_logging
-from app.api.v1.router import api_router
 
 settings = get_settings()
 logger = structlog.get_logger(__name__)
@@ -30,8 +30,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Schema → ChromaDB indexing (incremental, hash-based; non-fatal)
     try:
-        from app.services.rag_service import RAGService
         from app.db.session import AsyncSessionLocal
+        from app.services.rag_service import RAGService
+
         rag = RAGService()
         async with AsyncSessionLocal() as db:
             result = await rag.index_schema(db=db, force=False)
@@ -48,23 +49,29 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
 
     # Start Kafka Consumer
-    from app.services.kafka_service import KafkaService
     from app.db.session import AsyncSessionLocal
+    from app.services.kafka_service import KafkaService
+
     kafka_svc = KafkaService()
     try:
         await kafka_svc.start_consumer(db_session_maker=AsyncSessionLocal)
     except Exception as exc:
-        logger.warning("Kafka Consumer failed to start (is Kafka running?)", error=str(exc))
+        logger.warning(
+            "Kafka Consumer failed to start (is Kafka running?)", error=str(exc)
+        )
 
     # Start Mock Event Generator
-    from app.services.mock_events import run_mock_event_generator
     import asyncio
+
+    from app.services.mock_events import run_mock_event_generator
+
     mock_task = asyncio.create_task(run_mock_event_generator())
 
     # ── APScheduler: Recurring KG sync ────────────────────────
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
-    from app.services.kg_ingestion_service import KGIngestionService
+
     from app.db.session import AsyncSessionLocal as _ASESL
+    from app.services.kg_ingestion_service import KGIngestionService
 
     async def _run_kg_sync():
         logger.info("APScheduler: Starting scheduled KG sync")
@@ -82,7 +89,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         replace_existing=True,
     )
     scheduler.start()
-    logger.info("APScheduler started", interval_minutes=settings.kg_sync_interval_minutes)
+    logger.info(
+        "APScheduler started", interval_minutes=settings.kg_sync_interval_minutes
+    )
 
     yield
 
@@ -93,14 +102,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await kafka_svc.consumer.stop()
         except Exception:
             pass
-            
-    if 'mock_task' in locals():
+
+    if "mock_task" in locals():
         mock_task.cancel()
 
-    if 'scheduler' in locals():
+    if "scheduler" in locals():
         scheduler.shutdown(wait=False)
 
     from app.services.neo4j_driver import close_driver
+
     await close_driver()
 
 
@@ -122,7 +132,9 @@ def create_application() -> FastAPI:
     # ── CORS ──────────────────────────────────────────────────
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["https://healthcopilot.internal"] if not settings.app_debug else [],
+        allow_origins=(
+            ["https://healthcopilot.internal"] if not settings.app_debug else []
+        ),
         allow_origin_regex=r"http://localhost:\d+" if settings.app_debug else None,
         allow_credentials=True,
         allow_methods=["*"],
@@ -131,6 +143,7 @@ def create_application() -> FastAPI:
 
     # ── Audit Logging ─────────────────────────────────────────
     from app.middleware.audit import AuditLogMiddleware
+
     app.add_middleware(AuditLogMiddleware)
 
     # ── Exception Handlers ────────────────────────────────────
@@ -138,6 +151,7 @@ def create_application() -> FastAPI:
 
     # ── Telemetry & Metrics ───────────────────────────────────
     from app.core.telemetry import setup_telemetry
+
     setup_telemetry(app)
 
     Instrumentator(

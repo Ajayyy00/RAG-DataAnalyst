@@ -21,9 +21,7 @@ class QueryExecutionService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def execute(
-        self, sql: str, max_rows: int | None = None
-    ) -> Dict[str, Any]:
+    async def execute(self, sql: str, max_rows: int | None = None) -> Dict[str, Any]:
         """
         Execute a validated SQL query and return structured results.
 
@@ -55,7 +53,9 @@ class QueryExecutionService:
             msg = str(exc.orig) if exc.orig else str(exc)
             raise QueryExecutionError(f"SQL execution error: {msg}") from exc
         except Exception as exc:
-            raise QueryExecutionError(f"Unexpected error during execution: {exc}") from exc
+            raise QueryExecutionError(
+                f"Unexpected error during execution: {exc}"
+            ) from exc
 
         elapsed_ms = int((time.monotonic() - start) * 1000)
 

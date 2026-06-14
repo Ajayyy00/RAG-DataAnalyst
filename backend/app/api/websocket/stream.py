@@ -5,6 +5,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
+import redis.asyncio as aioredis
 import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -18,7 +19,6 @@ from app.services.query_execution_service import QueryExecutionService
 from app.services.rag_service import RAGService
 from app.services.sql_validation_service import SQLValidationService
 from app.services.text_to_sql_service import TextToSQLService
-import redis.asyncio as aioredis
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
@@ -78,28 +78,44 @@ async def stream_query(ws: WebSocket, session_id: uuid.UUID) -> None:
                     await _send(ws, "status", {"step": "generating_sql"})
                     history = await history_svc.get_conversation_context(session_id)
                     async with TextToSQLService() as sql_svc:
-                        sql = await sql_svc.generate_sql(question, schema_context, history)
+                        sql = await sql_svc.generate_sql(
+                            question, schema_context, history
+                        )
                     await _send(ws, "sql_generated", {"sql": sql})
 
                     # ── Validation ───────────────────────────
                     validator = SQLValidationService()
                     is_valid, violations, normalized = validator.validate(sql)
-                    await _send(ws, "sql_validated", {"valid": is_valid, "violations": violations})
+                    await _send(
+                        ws,
+                        "sql_validated",
+                        {"valid": is_valid, "violations": violations},
+                    )
 
                     if not is_valid:
-                        await _send(ws, "done", {"query_id": query_id, "error": "Validation failed"})
+                        await _send(
+                            ws,
+                            "done",
+                            {"query_id": query_id, "error": "Validation failed"},
+                        )
                         continue
 
                     # ── Execution ────────────────────────────
                     await _send(ws, "status", {"step": "executing_query"})
                     executor = QueryExecutionService(db)
-                    results = await executor.execute(normalized, max_rows=options.get("max_rows", 500))
-                    await _send(ws, "results_ready", {
-                        "columns": results["columns"],
-                        "rows": results["rows"],
-                        "row_count": results["row_count"],
-                        "execution_ms": results["execution_ms"],
-                    })
+                    results = await executor.execute(
+                        normalized, max_rows=options.get("max_rows", 500)
+                    )
+                    await _send(
+                        ws,
+                        "results_ready",
+                        {
+                            "columns": results["columns"],
+                            "rows": results["rows"],
+                            "row_count": results["row_count"],
+                            "execution_ms": results["execution_ms"],
+                        },
+                    )
 
                     # ── Chart ────────────────────────────────
                     advisor = ChartGenerationService()
@@ -109,7 +125,9 @@ async def stream_query(ws: WebSocket, session_id: uuid.UUID) -> None:
                     # ── Insights ─────────────────────────────
                     await _send(ws, "status", {"step": "generating_insights"})
                     async with LLMExplanationService() as insight_svc:
-                        insights = await insight_svc.generate_insights(question, normalized, results)
+                        insights = await insight_svc.generate_insights(
+                            question, normalized, results
+                        )
                     await _send(ws, "insights_ready", {"insights": insights})
 
                     await _send(ws, "done", {"query_id": query_id})

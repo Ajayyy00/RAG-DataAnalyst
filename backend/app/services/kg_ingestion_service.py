@@ -3,15 +3,16 @@ Knowledge Graph Ingestion Service
 Syncs data from PostgreSQL into Neo4j and dynamically extracts
 medical knowledge (Disease→Symptom, Medication→Disease) via LLM.
 """
-import structlog
-import asyncio
-from typing import List, Dict, Any
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from langchain_core.messages import SystemMessage, HumanMessage
+import asyncio
+from typing import Any, Dict, List
+
+import structlog
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.services.neo4j_driver import run_query
@@ -22,14 +23,23 @@ settings = get_settings()
 
 # ── LLM-extracted knowledge schemas ──────────────────────────
 
+
 class DiseaseKnowledge(BaseModel):
-    symptoms: List[str] = Field(..., description="Common symptoms of this disease, e.g. ['fever', 'cough']")
-    related_medications: List[str] = Field(..., description="Common first-line medications used to treat this disease")
+    symptoms: List[str] = Field(
+        ..., description="Common symptoms of this disease, e.g. ['fever', 'cough']"
+    )
+    related_medications: List[str] = Field(
+        ..., description="Common first-line medications used to treat this disease"
+    )
 
 
 class MedicationKnowledge(BaseModel):
-    treats_diseases: List[str] = Field(..., description="Diseases this medication is primarily used to treat")
-    common_side_effects: List[str] = Field(..., description="Common side effects of this medication")
+    treats_diseases: List[str] = Field(
+        ..., description="Diseases this medication is primarily used to treat"
+    )
+    common_side_effects: List[str] = Field(
+        ..., description="Common side effects of this medication"
+    )
 
 
 # ── Constraint bootstrap ──────────────────────────────────────
@@ -76,43 +86,63 @@ class KGIngestionService:
             schema_instructions = (
                 "Respond in valid JSON matching exactly this schema:\n"
                 "{\n"
-                "  \"symptoms\": [\"list of common symptoms\"],\n"
-                "  \"related_medications\": [\"list of common medications\"]\n"
+                '  "symptoms": ["list of common symptoms"],\n'
+                '  "related_medications": ["list of common medications"]\n'
                 "}"
             )
-            result = await self.llm_disease.ainvoke([
-                SystemMessage(content=f"You are a medical expert. Extract clinical knowledge about the given disease. {schema_instructions}"),
-                HumanMessage(content=f"Disease: {disease_name}"),
-            ])
+            result = await self.llm_disease.ainvoke(
+                [
+                    SystemMessage(
+                        content=f"You are a medical expert. Extract clinical knowledge about the given disease. {schema_instructions}"
+                    ),
+                    HumanMessage(content=f"Disease: {disease_name}"),
+                ]
+            )
             return result
         except Exception as e:
-            log.warning("Disease knowledge extraction failed", disease=disease_name, error=str(e))
+            log.warning(
+                "Disease knowledge extraction failed",
+                disease=disease_name,
+                error=str(e),
+            )
             return DiseaseKnowledge(symptoms=[], related_medications=[])
 
-    async def extract_medication_knowledge(self, medication_name: str) -> MedicationKnowledge:
+    async def extract_medication_knowledge(
+        self, medication_name: str
+    ) -> MedicationKnowledge:
         try:
             schema_instructions = (
                 "Respond in valid JSON matching exactly this schema:\n"
                 "{\n"
-                "  \"treats_diseases\": [\"list of diseases treated\"],\n"
-                "  \"common_side_effects\": [\"list of side effects\"]\n"
+                '  "treats_diseases": ["list of diseases treated"],\n'
+                '  "common_side_effects": ["list of side effects"]\n'
                 "}"
             )
-            result = await self.llm_medication.ainvoke([
-                SystemMessage(content=f"You are a clinical pharmacist. Extract knowledge about the given medication. {schema_instructions}"),
-                HumanMessage(content=f"Medication: {medication_name}"),
-            ])
+            result = await self.llm_medication.ainvoke(
+                [
+                    SystemMessage(
+                        content=f"You are a clinical pharmacist. Extract knowledge about the given medication. {schema_instructions}"
+                    ),
+                    HumanMessage(content=f"Medication: {medication_name}"),
+                ]
+            )
             return result
         except Exception as e:
-            log.warning("Medication knowledge extraction failed", medication=medication_name, error=str(e))
+            log.warning(
+                "Medication knowledge extraction failed",
+                medication=medication_name,
+                error=str(e),
+            )
             return MedicationKnowledge(treats_diseases=[], common_side_effects=[])
 
     # ── ETL helpers ───────────────────────────────────────────
 
     async def _sync_patients(self, db: AsyncSession):
-        rows = await db.execute(text(
-            "SELECT id::text, first_name, last_name, date_of_birth, gender FROM patients LIMIT 5000"
-        ))
+        rows = await db.execute(
+            text(
+                "SELECT id::text, first_name, last_name, date_of_birth, gender FROM patients LIMIT 5000"
+            )
+        )
         patients = rows.mappings().all()
         for p in patients:
             await run_query(
@@ -121,17 +151,21 @@ class KGIngestionService:
                        pt.last_name  = $last_name,
                        pt.dob        = $dob,
                        pt.gender     = $gender""",
-                {"id": p["id"], "first_name": p["first_name"],
-                 "last_name": p["last_name"], "dob": str(p["date_of_birth"]),
-                 "gender": p["gender"]},
+                {
+                    "id": p["id"],
+                    "first_name": p["first_name"],
+                    "last_name": p["last_name"],
+                    "dob": str(p["date_of_birth"]),
+                    "gender": p["gender"],
+                },
             )
         log.info("Synced patients to Neo4j", count=len(patients))
 
     async def _sync_diagnoses(self, db: AsyncSession):
-        rows = await db.execute(text(
-            """SELECT d.patient_id::text, d.icd10_desc as diagnosis_name
-               FROM diagnoses d WHERE d.icd10_desc IS NOT NULL LIMIT 10000"""
-        ))
+        rows = await db.execute(
+            text("""SELECT d.patient_id::text, d.icd10_desc as diagnosis_name
+               FROM diagnoses d WHERE d.icd10_desc IS NOT NULL LIMIT 10000""")
+        )
         diagnoses = rows.mappings().all()
         seen_diseases: Dict[str, bool] = {}
 
@@ -139,10 +173,7 @@ class KGIngestionService:
             disease_name = row["diagnosis_name"]
 
             # MERGE disease node
-            await run_query(
-                "MERGE (d:Disease {name: $name})",
-                {"name": disease_name}
-            )
+            await run_query("MERGE (d:Disease {name: $name})", {"name": disease_name})
 
             # Patient → Disease relationship
             await run_query(
@@ -155,7 +186,7 @@ class KGIngestionService:
             # 3. Extract LLM Knowledge
             if disease_name not in seen_diseases:
                 seen_diseases[disease_name] = True
-                
+
                 # Protect against Groq 30 RPM rate limits by only taking first 10 unique diseases
                 if len(seen_diseases) <= 10:
                     knowledge = await self.extract_disease_knowledge(disease_name)
@@ -176,10 +207,10 @@ class KGIngestionService:
         log.info("Synced diagnoses to Neo4j", count=len(diagnoses))
 
     async def _sync_medications(self, db: AsyncSession):
-        rows = await db.execute(text(
-            """SELECT m.patient_id::text, m.drug_name as medication_name
-               FROM medications m WHERE m.drug_name IS NOT NULL LIMIT 10000"""
-        ))
+        rows = await db.execute(
+            text("""SELECT m.patient_id::text, m.drug_name as medication_name
+               FROM medications m WHERE m.drug_name IS NOT NULL LIMIT 10000""")
+        )
         medications = rows.mappings().all()
         seen_medications: Dict[str, bool] = {}
 
@@ -198,12 +229,14 @@ class KGIngestionService:
             # 3. Extract LLM Knowledge
             if med_name not in seen_medications:
                 seen_medications[med_name] = True
-                
+
                 if len(seen_medications) <= 10:
                     knowledge = await self.extract_medication_knowledge(med_name)
                     await asyncio.sleep(2.1)
                 else:
-                    knowledge = MedicationKnowledge(treats_diseases=[], common_side_effects=[])
+                    knowledge = MedicationKnowledge(
+                        treats_diseases=[], common_side_effects=[]
+                    )
 
                 # 4. Link Treated Diseases in knowledge.treats_diseases:
                 for disease in knowledge.treats_diseases:
@@ -228,14 +261,14 @@ class KGIngestionService:
         log.info("Synced patient symptom relationships via disease graph")
 
     async def _sync_lab_tests(self, db: AsyncSession):
-        rows = await db.execute(text(
-            """SELECT lr.patient_id::text, lr.test_name
-               FROM lab_results lr LIMIT 10000"""
-        ))
+        rows = await db.execute(text("""SELECT lr.patient_id::text, lr.test_name
+               FROM lab_results lr LIMIT 10000"""))
         lab_tests = rows.mappings().all()
 
         for row in lab_tests:
-            await run_query("MERGE (lt:LabTest {name: $name})", {"name": row["test_name"]})
+            await run_query(
+                "MERGE (lt:LabTest {name: $name})", {"name": row["test_name"]}
+            )
             await run_query(
                 """MATCH (pt:Patient {id: $patient_id})
                    MATCH (lt:LabTest {name: $test_name})

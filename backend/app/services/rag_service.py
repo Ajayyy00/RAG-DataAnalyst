@@ -59,14 +59,15 @@ settings = get_settings()
 
 
 # ── Chunk types ────────────────────────────────────────────────────────────────
-CHUNK_TABLE        = "table"
-CHUNK_COLUMNS      = "columns"
+CHUNK_TABLE = "table"
+CHUNK_COLUMNS = "columns"
 CHUNK_RELATIONSHIP = "relationship"
 
 
 @dataclass
 class SchemaChunk:
     """A single unit of schema text to embed and store in ChromaDB."""
+
     id: str
     text: str
     chunk_type: str
@@ -76,9 +77,9 @@ class SchemaChunk:
 
     def to_metadata(self) -> dict[str, Any]:
         return {
-            "chunk_type":    self.chunk_type,
-            "table_name":    self.table_name,
-            "schema_hash":   self.schema_hash,
+            "chunk_type": self.chunk_type,
+            "table_name": self.table_name,
+            "schema_hash": self.schema_hash,
             "related_tables": json.dumps(self.related_tables),
         }
 
@@ -86,14 +87,16 @@ class SchemaChunk:
 @dataclass
 class RetrievedTable:
     """A table selected by the retrieval step, with its ranking score."""
+
     name: str
-    score: float           # lower = better (cosine distance)
+    score: float  # lower = better (cosine distance)
     chunks_matched: int
     related_tables: list[str]
     table_info: Optional[TableInfo] = None
 
 
 # ── RAGService ─────────────────────────────────────────────────────────────────
+
 
 class RAGService:
     """
@@ -104,8 +107,8 @@ class RAGService:
     """
 
     def __init__(self) -> None:
-        self._chroma_client: Optional[Any]    = None
-        self._collection: Optional[Any]       = None
+        self._chroma_client: Optional[Any] = None
+        self._collection: Optional[Any] = None
         self._embedder: Optional[EmbeddingService] = None
 
     # ── ChromaDB initialisation ────────────────────────────────────────────────
@@ -143,9 +146,9 @@ class RAGService:
             self._collection = client.get_or_create_collection(
                 name=settings.chromadb_collection,
                 metadata={
-                    "hnsw:space": "cosine",          # cosine distance for similarity
-                    "hnsw:construction_ef": 200,      # higher = better index quality
-                    "hnsw:M": 16,                     # HNSW graph connectivity
+                    "hnsw:space": "cosine",  # cosine distance for similarity
+                    "hnsw:construction_ef": 200,  # higher = better index quality
+                    "hnsw:M": 16,  # HNSW graph connectivity
                 },
             )
         return self._collection
@@ -157,7 +160,9 @@ class RAGService:
 
     # ── Indexing ───────────────────────────────────────────────────────────────
 
-    async def index_schema(self, db: Optional[AsyncSession] = None, force: bool = False) -> dict:
+    async def index_schema(
+        self, db: Optional[AsyncSession] = None, force: bool = False
+    ) -> dict:
         """
         Extract schema from PostgreSQL and upsert into ChromaDB.
 
@@ -188,8 +193,8 @@ class RAGService:
         existing_hashes = self._fetch_existing_hashes(collection)
 
         chunks_to_add: list[SchemaChunk] = []
-        indexed_tables: list[str]        = []
-        skipped_tables: list[str]        = []
+        indexed_tables: list[str] = []
+        skipped_tables: list[str] = []
 
         for table in tables:
             table_hash = table.schema_hash()
@@ -217,16 +222,16 @@ class RAGService:
             }
 
         # Batch embed all chunks (async to avoid blocking)
-        texts      = [c.text for c in chunks_to_add]
-        embedder   = self._get_embedder()
+        texts = [c.text for c in chunks_to_add]
+        embedder = self._get_embedder()
         embeddings = await embedder.encode_batch_async(texts, show_progress=True)
 
         # Upsert into ChromaDB (replaces existing docs with same ID)
         collection.upsert(
-            ids        = [c.id for c in chunks_to_add],
-            documents  = texts,
-            embeddings = embeddings,
-            metadatas  = [c.to_metadata() for c in chunks_to_add],
+            ids=[c.id for c in chunks_to_add],
+            documents=texts,
+            embeddings=embeddings,
+            metadatas=[c.to_metadata() for c in chunks_to_add],
         )
 
         log.info(
@@ -236,9 +241,9 @@ class RAGService:
             total_chunks=len(chunks_to_add),
         )
         return {
-            "indexed":        len(indexed_tables),
-            "skipped":        len(skipped_tables),
-            "total_chunks":   len(chunks_to_add),
+            "indexed": len(indexed_tables),
+            "skipped": len(skipped_tables),
+            "total_chunks": len(chunks_to_add),
             "indexed_tables": indexed_tables,
             "skipped_tables": skipped_tables,
         }
@@ -249,40 +254,45 @@ class RAGService:
         h = table.schema_hash()
 
         # 1. Table-level description (for topic-level matching)
-        chunks.append(SchemaChunk(
-            id            = f"schema__{table.name}__table",
-            text          = table.to_description(),
-            chunk_type    = CHUNK_TABLE,
-            table_name    = table.name,
-            schema_hash   = h,
-            related_tables= table.related_tables,
-        ))
+        chunks.append(
+            SchemaChunk(
+                id=f"schema__{table.name}__table",
+                text=table.to_description(),
+                chunk_type=CHUNK_TABLE,
+                table_name=table.name,
+                schema_hash=h,
+                related_tables=table.related_tables,
+            )
+        )
 
         # 2. Column text (for column-name / type matching)
-        col_text = (
-            f"Columns of table {table.name}: "
-            + "; ".join(c.to_text() for c in table.columns)
+        col_text = f"Columns of table {table.name}: " + "; ".join(
+            c.to_text() for c in table.columns
         )
-        chunks.append(SchemaChunk(
-            id            = f"schema__{table.name}__columns",
-            text          = col_text,
-            chunk_type    = CHUNK_COLUMNS,
-            table_name    = table.name,
-            schema_hash   = h,
-            related_tables= table.related_tables,
-        ))
+        chunks.append(
+            SchemaChunk(
+                id=f"schema__{table.name}__columns",
+                text=col_text,
+                chunk_type=CHUNK_COLUMNS,
+                table_name=table.name,
+                schema_hash=h,
+                related_tables=table.related_tables,
+            )
+        )
 
         # 3. Relationship text (for JOIN-path matching) — only if FKs exist
         rel_text = table.to_relationship_text()
         if rel_text:
-            chunks.append(SchemaChunk(
-                id            = f"schema__{table.name}__relationship",
-                text          = rel_text,
-                chunk_type    = CHUNK_RELATIONSHIP,
-                table_name    = table.name,
-                schema_hash   = h,
-                related_tables= table.related_tables,
-            ))
+            chunks.append(
+                SchemaChunk(
+                    id=f"schema__{table.name}__relationship",
+                    text=rel_text,
+                    chunk_type=CHUNK_RELATIONSHIP,
+                    table_name=table.name,
+                    schema_hash=h,
+                    related_tables=table.related_tables,
+                )
+            )
 
         return chunks
 
@@ -336,13 +346,13 @@ class RAGService:
             return [], ""
 
         # Re-rank: score each table by its best chunk distance
-        table_scores: dict[str, float]        = {}
-        table_chunks: dict[str, int]          = {}
-        table_related: dict[str, list[str]]   = {}
+        table_scores: dict[str, float] = {}
+        table_chunks: dict[str, int] = {}
+        table_related: dict[str, list[str]] = {}
 
-        docs      = results.get("documents",  [[]])[0]
-        metas     = results.get("metadatas",  [[]])[0]
-        distances = results.get("distances",  [[]])[0]
+        docs = results.get("documents", [[]])[0]
+        metas = results.get("metadatas", [[]])[0]
+        distances = results.get("distances", [[]])[0]
 
         for doc, meta, dist in zip(docs, metas, distances):
             if not meta:
@@ -355,7 +365,7 @@ class RAGService:
             if tname not in table_scores or dist < table_scores[tname]:
                 table_scores[tname] = dist
 
-            table_chunks[tname]  = table_chunks.get(tname, 0) + 1
+            table_chunks[tname] = table_chunks.get(tname, 0) + 1
             table_related[tname] = json.loads(meta.get("related_tables", "[]"))
 
         # Sort by score ascending (closest = most relevant)
@@ -363,15 +373,17 @@ class RAGService:
 
         retrieved: list[RetrievedTable] = []
         for tname, score in ranked:
-            retrieved.append(RetrievedTable(
-                name           = tname,
-                score          = score,
-                chunks_matched = table_chunks.get(tname, 0),
-                related_tables = table_related.get(tname, []),
-            ))
+            retrieved.append(
+                RetrievedTable(
+                    name=tname,
+                    score=score,
+                    chunks_matched=table_chunks.get(tname, 0),
+                    related_tables=table_related.get(tname, []),
+                )
+            )
 
         # Expand with implicit related tables not already included
-        all_names    = {r.name for r in retrieved}
+        all_names = {r.name for r in retrieved}
         extras: set[str] = set()
         for r in retrieved:
             for rel in r.related_tables:
@@ -389,17 +401,14 @@ class RAGService:
         return retrieved, context
 
     def retrieve_schema_context(
-        self,
-        question: str,
-        top_k: Optional[int] = None,
-        user_role: str = "analyst"
+        self, question: str, top_k: Optional[int] = None, user_role: str = "analyst"
     ) -> str:
         """
         Convenience method matching the original API signature.
         Returns only the context string (for backward compatibility with chat.py).
         """
         _, context = self.retrieve(question, top_k=top_k)
-        
+
         # Role-based Schema Filtering
         if user_role == "nurse":
             # Nurse should not see claims
@@ -410,7 +419,7 @@ class RAGService:
             context = context.replace("first_name", "[REDACTED_PII]")
             context = context.replace("last_name", "[REDACTED_PII]")
             context = context.replace("ssn", "[REDACTED_PII]")
-            
+
         return context
 
     # ── Context formatting ─────────────────────────────────────────────────────
@@ -478,10 +487,12 @@ class RAGService:
         try:
             collection = self._get_collection()
             result = collection.get(
-                where={"$and": [
-                    {"chunk_type": {"$eq": CHUNK_TABLE}},
-                    {"table_name": {"$in": table_names}},
-                ]},
+                where={
+                    "$and": [
+                        {"chunk_type": {"$eq": CHUNK_TABLE}},
+                        {"table_name": {"$in": table_names}},
+                    ]
+                },
                 include=["documents", "metadatas"],
             )
             docs: dict[str, str] = {}
@@ -503,10 +514,12 @@ class RAGService:
         try:
             collection = self._get_collection()
             result = collection.get(
-                where={"$and": [
-                    {"chunk_type": {"$eq": CHUNK_COLUMNS}},
-                    {"table_name": {"$in": table_names}},
-                ]},
+                where={
+                    "$and": [
+                        {"chunk_type": {"$eq": CHUNK_COLUMNS}},
+                        {"table_name": {"$in": table_names}},
+                    ]
+                },
                 include=["documents"],
             )
             return result.get("documents", [])
@@ -520,10 +533,12 @@ class RAGService:
         try:
             collection = self._get_collection()
             result = collection.get(
-                where={"$and": [
-                    {"chunk_type": {"$eq": CHUNK_RELATIONSHIP}},
-                    {"table_name": {"$in": table_names}},
-                ]},
+                where={
+                    "$and": [
+                        {"chunk_type": {"$eq": CHUNK_RELATIONSHIP}},
+                        {"table_name": {"$in": table_names}},
+                    ]
+                },
                 include=["documents"],
             )
             return result.get("documents", [])
@@ -537,7 +552,11 @@ class RAGService:
         try:
             col = self._get_collection()
             count = col.count()
-            return {"status": "ok", "total_chunks": count, "collection": settings.chromadb_collection}
+            return {
+                "status": "ok",
+                "total_chunks": count,
+                "collection": settings.chromadb_collection,
+            }
         except Exception as exc:
             return {"status": "error", "error": str(exc)}
 
@@ -545,25 +564,27 @@ class RAGService:
         """Return raw retrieval results for the /rag/search debug endpoint."""
         try:
             embedder = self._get_embedder()
-            vec      = embedder.encode_single(query)
-            col      = self._get_collection()
-            results  = col.query(
+            vec = embedder.encode_single(query)
+            col = self._get_collection()
+            results = col.query(
                 query_embeddings=[vec],
                 n_results=n,
                 include=["documents", "metadatas", "distances"],
             )
             output = []
             for doc, meta, dist in zip(
-                results.get("documents",  [[]])[0],
-                results.get("metadatas",  [[]])[0],
-                results.get("distances",  [[]])[0],
+                results.get("documents", [[]])[0],
+                results.get("metadatas", [[]])[0],
+                results.get("distances", [[]])[0],
             ):
-                output.append({
-                    "table":     meta.get("table_name") if meta else None,
-                    "chunk_type":meta.get("chunk_type") if meta else None,
-                    "distance":  round(dist, 4),
-                    "text":      doc[:200] if doc else None,
-                })
+                output.append(
+                    {
+                        "table": meta.get("table_name") if meta else None,
+                        "chunk_type": meta.get("chunk_type") if meta else None,
+                        "distance": round(dist, 4),
+                        "text": doc[:200] if doc else None,
+                    }
+                )
             return output
         except Exception as exc:
             log.error("Debug search failed", error=str(exc))

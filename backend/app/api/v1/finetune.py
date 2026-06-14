@@ -67,7 +67,11 @@ async def submit_feedback(
         db.add(pair)
 
     await db.flush()
-    logger.info("Feedback submitted", message_id=str(data.message_id), is_correct=data.is_correct)
+    logger.info(
+        "Feedback submitted",
+        message_id=str(data.message_id),
+        is_correct=data.is_correct,
+    )
     return {"status": "ok", "pair_id": str(pair.id)}
 
 
@@ -99,17 +103,25 @@ async def list_pairs(
     response_model=FinetuneStatsResponse,
     summary="Dataset statistics (admin only)",
 )
-async def get_stats(current_admin: CurrentAdmin, db: DbSession) -> FinetuneStatsResponse:
+async def get_stats(
+    current_admin: CurrentAdmin, db: DbSession
+) -> FinetuneStatsResponse:
     total = (await db.execute(select(func.count(NLSQLPair.id)))).scalar_one()
-    validated = (await db.execute(
-        select(func.count(NLSQLPair.id)).where(NLSQLPair.is_validated.is_(True))
-    )).scalar_one()
-    correct = (await db.execute(
-        select(func.count(NLSQLPair.id)).where(NLSQLPair.is_correct.is_(True))
-    )).scalar_one()
-    incorrect = (await db.execute(
-        select(func.count(NLSQLPair.id)).where(NLSQLPair.is_correct.is_(False))
-    )).scalar_one()
+    validated = (
+        await db.execute(
+            select(func.count(NLSQLPair.id)).where(NLSQLPair.is_validated.is_(True))
+        )
+    ).scalar_one()
+    correct = (
+        await db.execute(
+            select(func.count(NLSQLPair.id)).where(NLSQLPair.is_correct.is_(True))
+        )
+    ).scalar_one()
+    incorrect = (
+        await db.execute(
+            select(func.count(NLSQLPair.id)).where(NLSQLPair.is_correct.is_(False))
+        )
+    ).scalar_one()
     pending = total - validated
 
     return FinetuneStatsResponse(
@@ -161,5 +173,7 @@ async def export_dataset(
     return Response(
         content=content,
         media_type="application/jsonl",
-        headers={"Content-Disposition": f"attachment; filename=finetune_{data.format}.jsonl"},
+        headers={
+            "Content-Disposition": f"attachment; filename=finetune_{data.format}.jsonl"
+        },
     )

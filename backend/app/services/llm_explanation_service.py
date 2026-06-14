@@ -50,9 +50,7 @@ class LLMExplanationService:
 
         # Preview only the first 20 rows for the LLM
         preview_rows = rows[:20]
-        rows_text = "\n".join(
-            "  | ".join(str(v) for v in row) for row in preview_rows
-        )
+        rows_text = "\n".join("  | ".join(str(v) for v in row) for row in preview_rows)
 
         return (
             f"Question: {question}\n\n"
@@ -77,7 +75,9 @@ class LLMExplanationService:
     ) -> List[str]:
         """Call LLM and return a list of insight strings."""
         if not results.get("rows"):
-            return ["The query returned no results. This may indicate no matching data exists for the specified criteria."]
+            return [
+                "The query returned no results. This may indicate no matching data exists for the specified criteria."
+            ]
 
         context = self._build_context(question, sql, results)
 
@@ -118,7 +118,9 @@ class LLMExplanationService:
 
         except httpx.HTTPStatusError as exc:
             logger.error("LLM insight API error", status=exc.response.status_code)
-            raise LLMServiceError(f"Insight generation failed: {exc.response.status_code}") from exc
+            raise LLMServiceError(
+                f"Insight generation failed: {exc.response.status_code}"
+            ) from exc
         except httpx.RequestError as exc:
             logger.warning("LLM insight request failed", error=str(exc))
             return ["Insights could not be generated at this time."]

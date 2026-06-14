@@ -1,6 +1,7 @@
 """Dashboard generation API routes."""
-from fastapi import APIRouter
+
 import structlog
+from fastapi import APIRouter
 
 from app.dependencies import CurrentUser, DbSession, RedisClient
 from app.schemas.dashboard import DashboardGenerateRequest, DashboardResponse

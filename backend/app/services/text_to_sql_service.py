@@ -28,11 +28,23 @@ settings = get_settings()
 
 # ── Allowed tables (must match sql_validation_service.py allowlist) ────────────
 ALLOWED_TABLES: list[str] = [
-    "patients", "encounters", "diagnoses", "procedures",
-    "medications", "lab_results", "vital_signs", "claims",
-    "readmissions", "providers", "departments", "facilities",
-    "insurance_plans", "allergies", "immunizations",
-    "care_plans", "observations",
+    "patients",
+    "encounters",
+    "diagnoses",
+    "procedures",
+    "medications",
+    "lab_results",
+    "vital_signs",
+    "claims",
+    "readmissions",
+    "providers",
+    "departments",
+    "facilities",
+    "insurance_plans",
+    "allergies",
+    "immunizations",
+    "care_plans",
+    "observations",
 ]
 
 
@@ -164,17 +176,23 @@ LIMIT 20;
 
 # ── TextToSQLService ───────────────────────────────────────────────────────────
 
+import hashlib
+
+from redis.asyncio import Redis
+
+
 class TextToSQLService:
     """
     Converts natural language questions to SQL via an OpenAI-compatible LLM.
 
     Usage (async context manager to ensure httpx client is properly closed):
 
-        async with TextToSQLService() as svc:
+        async with TextToSQLService(redis_client) as svc:
             sql = await svc.generate_sql(question, schema_context)
     """
 
-    def __init__(self) -> None:
+    def __init__(self, redis_client: Optional[Redis] = None) -> None:
+        self.redis = redis_client
         self._client = httpx.AsyncClient(
             base_url=settings.llm_base_url,
             headers={
@@ -219,22 +237,28 @@ class TextToSQLService:
         messages: list[dict] = [{"role": "system", "content": system_content}]
 
         # Layer 4: recent history (max 6 turns = 12 messages)
-        recent = conversation_history[-12:] if len(conversation_history) > 12 else conversation_history
+        recent = (
+            conversation_history[-12:]
+            if len(conversation_history) > 12
+            else conversation_history
+        )
         messages.extend(recent)
 
         # Layer 5: user question with CoT instruction
-        messages.append({
-            "role": "user",
-            "content": (
-                f"Question: {question}\n\n"
-                "Think step by step:\n"
-                "1. Which tables are needed?\n"
-                "2. What JOINs are required?\n"
-                "3. What WHERE filters apply?\n"
-                "4. What aggregation or ordering is needed?\n\n"
-                "Now output ONLY the SQL query:"
-            ),
-        })
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    f"Question: {question}\n\n"
+                    "Think step by step:\n"
+                    "1. Which tables are needed?\n"
+                    "2. What JOINs are required?\n"
+                    "3. What WHERE filters apply?\n"
+                    "4. What aggregation or ordering is needed?\n\n"
+                    "Now output ONLY the SQL query:"
+                ),
+            }
+        )
 
         return messages
 
@@ -255,42 +279,67 @@ class TextToSQLService:
         Strips markdown fences, leading/trailing whitespace, and ensures
         the result starts with a SQL keyword.
         """
-        history  = conversation_history or []
+        history = conversation_history or []
+
+        # 1. Check Redis Cache for exact match
+        cache_key = None
+        if self.redis:
+            query_hash = hashlib.md5(question.strip().lower().encode()).hexdigest()
+            cache_key = f"sql_cache:{query_hash}"
+            try:
+                cached_sql = await self.redis.get(cache_key)
+                if cached_sql:
+                    log.info("SQL cache hit", question_preview=question[:80])
+                    sql = (
+                        cached_sql.decode("utf-8")
+                        if isinstance(cached_sql, bytes)
+                        else cached_sql
+                    )
+                    return sql
+            except Exception as e:
+                log.warning("Redis cache error", error=str(e))
+
         messages = self._build_messages(question, schema_context, history)
 
         try:
-            from opentelemetry import trace
             import time
+
+            from opentelemetry import trace
+
             from app.core.telemetry import llm_generation_duration
-            
+
             tracer = trace.get_tracer(__name__)
             start_time = time.perf_counter()
-            
+
             with tracer.start_as_current_span("generate_sql_llm_call") as span:
                 span.set_attribute("llm.model", settings.llm_model)
                 span.set_attribute("llm.prompt_length", len(str(messages)))
-                
+
                 response = await self._client.post(
                     "/chat/completions",
                     json={
-                        "model":       settings.llm_model,
-                        "messages":    messages,
-                        "max_tokens":  settings.llm_max_tokens,
+                        "model": settings.llm_model,
+                        "messages": messages,
+                        "max_tokens": settings.llm_max_tokens,
                         "temperature": settings.llm_temperature,
-                        "stream":      False,
+                        "stream": False,
                     },
                 )
                 response.raise_for_status()
                 data = response.json()
-                raw  = data["choices"][0]["message"]["content"].strip()
-                
+                raw = data["choices"][0]["message"]["content"].strip()
+
                 duration = time.perf_counter() - start_time
-                llm_generation_duration.labels(model=settings.llm_model).observe(duration)
+                llm_generation_duration.labels(model=settings.llm_model).observe(
+                    duration
+                )
                 span.set_attribute("llm.response_length", len(raw))
 
         except httpx.HTTPStatusError as exc:
             log.error("LLM API error", status=exc.response.status_code)
-            raise LLMServiceError(f"LLM returned HTTP {exc.response.status_code}") from exc
+            raise LLMServiceError(
+                f"LLM returned HTTP {exc.response.status_code}"
+            ) from exc
         except httpx.RequestError as exc:
             log.error("LLM unreachable", error=str(exc))
             raise LLMServiceError(f"LLM service unreachable: {exc}") from exc
@@ -303,6 +352,14 @@ class TextToSQLService:
             sql_preview=sql[:120],
             model=settings.llm_model,
         )
+
+        # Cache the successfully generated SQL
+        if self.redis and cache_key:
+            try:
+                await self.redis.setex(cache_key, 86400, sql)  # Cache for 24 hours
+            except Exception as e:
+                log.warning("Failed to save SQL to cache", error=str(e))
+
         return sql
 
     @staticmethod
@@ -320,7 +377,7 @@ class TextToSQLService:
         # If the model prepended "SQL:" or "Query:" labels, remove them
         for prefix in ("sql:", "query:", "sql query:"):
             if raw.lower().startswith(prefix):
-                raw = raw[len(prefix):].strip()
+                raw = raw[len(prefix) :].strip()
                 break
 
         # Ensure it starts with a known SQL keyword
@@ -330,7 +387,7 @@ class TextToSQLService:
             for line in raw.split("\n"):
                 stripped = line.strip()
                 if any(stripped.upper().startswith(s) for s in sql_starters):
-                    raw = raw[raw.index(stripped):]
+                    raw = raw[raw.index(stripped) :]
                     break
 
         return raw.strip()

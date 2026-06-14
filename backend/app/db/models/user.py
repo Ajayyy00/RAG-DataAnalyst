@@ -16,11 +16,13 @@ if TYPE_CHECKING:
 
 import enum
 
+
 class UserRole(str, enum.Enum):
     ADMIN = "admin"
     DOCTOR = "doctor"
     NURSE = "nurse"
     ANALYST = "analyst"
+
 
 class User(Base):
     """Application user with RBAC role assignment."""
@@ -39,15 +41,20 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     first_name: Mapped[str | None] = mapped_column(String(100))
     last_name: Mapped[str | None] = mapped_column(String(100))
-    
-    role: Mapped[UserRole] = mapped_column(String(20), default=UserRole.ANALYST, nullable=False)
+
+    role: Mapped[UserRole] = mapped_column(
+        String(20), default=UserRole.ANALYST, nullable=False
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
 
     # ── Relationships ─────────────────────────────────────────

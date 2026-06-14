@@ -1,13 +1,15 @@
-import json
 import asyncio
+import json
+
 import structlog
-from aiokafka import AIOKafkaProducer, AIOKafkaConsumer
+from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 
 from app.config import get_settings
 from app.services.realtime_analytics import RealTimeAnalyticsService
 
 log = structlog.get_logger(__name__)
 settings = get_settings()
+
 
 class KafkaService:
     def __init__(self):
@@ -19,7 +21,7 @@ class KafkaService:
     async def start_producer(self):
         self.producer = AIOKafkaProducer(
             bootstrap_servers=self.bootstrap_servers,
-            value_serializer=lambda v: json.dumps(v).encode("utf-8")
+            value_serializer=lambda v: json.dumps(v).encode("utf-8"),
         )
         await self.producer.start()
         log.info("Kafka Producer started", bootstrap_servers=self.bootstrap_servers)
@@ -41,7 +43,7 @@ class KafkaService:
             bootstrap_servers=self.bootstrap_servers,
             group_id="healthcare_copilot_group",
             value_deserializer=lambda v: json.loads(v.decode("utf-8")),
-            auto_offset_reset="latest"
+            auto_offset_reset="latest",
         )
         await self.consumer.start()
         log.info("Kafka Consumer started", topic=self.topic)
@@ -52,9 +54,14 @@ class KafkaService:
     async def _consume_loop(self, db_session_maker):
         try:
             async for msg in self.consumer:
-                log.info("Consumed event", key=msg.key, partition=msg.partition, offset=msg.offset)
+                log.info(
+                    "Consumed event",
+                    key=msg.key,
+                    partition=msg.partition,
+                    offset=msg.offset,
+                )
                 event_data = msg.value
-                
+
                 # Process the event through RealTimeAnalyticsService
                 async with db_session_maker() as db_session:
                     analytics_svc = RealTimeAnalyticsService(db_session)

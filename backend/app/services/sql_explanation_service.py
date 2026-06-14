@@ -1,5 +1,5 @@
 import structlog
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from app.config import get_settings
@@ -7,6 +7,7 @@ from app.schemas.sql_explanation import SQLExplanation
 
 log = structlog.get_logger(__name__)
 settings = get_settings()
+
 
 class SQLExplanationService:
     """Service to translate raw SQL into human-readable explanations using an LLM."""
@@ -28,9 +29,9 @@ class SQLExplanationService:
         log.info("Generating SQL explanation")
         sys_msg = SystemMessage(
             content="You are an expert Data Analyst and Database Administrator.\n"
-                    "Your job is to explain the provided SQL query in clear, human-readable terms.\n"
-                    "Break down the query into its summary, the tables it uses, how it joins them, the filters it applies, and how it aggregates data.\n"
-                    "Be concise but thorough so a non-technical user can understand exactly what data is being queried."
+            "Your job is to explain the provided SQL query in clear, human-readable terms.\n"
+            "Break down the query into its summary, the tables it uses, how it joins them, the filters it applies, and how it aggregates data.\n"
+            "Be concise but thorough so a non-technical user can understand exactly what data is being queried."
         )
         human_msg = HumanMessage(content=f"Explain this SQL query:\n```sql\n{sql}\n```")
 

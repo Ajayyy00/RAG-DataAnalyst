@@ -17,7 +17,9 @@ class Settings(BaseSettings):
 
     # ── Application ──────────────────────────────────────────
     app_name: str = "Healthcare Copilot API"
-    app_env: str = Field(default="development", pattern="^(development|staging|production)$")
+    app_env: str = Field(
+        default="development", pattern="^(development|staging|production)$"
+    )
     app_debug: bool = False
     api_prefix: str = "/api/v1"
     secret_key: str = "supersecretkey-change-in-production"
@@ -100,10 +102,17 @@ class Settings(BaseSettings):
         # Pydantic v2 requires info.data to access other fields, but we can't reliably read app_env if it hasn't parsed yet.
         # So we just do a basic check here or we could check it inside __init__.
         # Actually a simple check against known weak passwords is fine.
-        weak_passwords = ["changeme", "supersecretkey-change-in-production", "jwt-secret-key-change-in-production"]
+        weak_passwords = [
+            "changeme",
+            "supersecretkey-change-in-production",
+            "jwt-secret-key-change-in-production",
+        ]
         if v in weak_passwords and "production" in str(info.data.get("app_env", "")):
-            raise ValueError(f"Cannot use default/weak secret for {info.field_name} in production!")
+            raise ValueError(
+                f"Cannot use default/weak secret for {info.field_name} in production!"
+            )
         return v
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

@@ -59,9 +59,7 @@ class AuthService:
         logger.info("User registered", user_id=str(user.id), email=user.email)
         return user
 
-    async def authenticate_user(
-        self, email: str, password: str
-    ) -> TokenResponse:
+    async def authenticate_user(self, email: str, password: str) -> TokenResponse:
         """Verify credentials and return access + refresh tokens."""
         result = await self.db.execute(
             select(User).where(User.email == email, User.is_active.is_(True))
@@ -78,7 +76,11 @@ class AuthService:
             .values(last_login_at=datetime.now(timezone.utc))
         )
 
-        token_data = {"sub": str(user.id), "role": user.role.value if hasattr(user.role, "value") else user.role, "email": user.email}
+        token_data = {
+            "sub": str(user.id),
+            "role": user.role.value if hasattr(user.role, "value") else user.role,
+            "email": user.email,
+        }
         access_token = create_access_token(token_data)
         refresh_token = create_refresh_token(token_data)
 
@@ -96,9 +98,7 @@ class AuthService:
             raise AuthenticationError("Invalid or expired refresh token")
 
         result = await self.db.execute(
-            select(User).where(
-                User.id == payload["sub"], User.is_active.is_(True)
-            )
+            select(User).where(User.id == payload["sub"], User.is_active.is_(True))
         )
         user = result.scalar_one_or_none()
         if not user:

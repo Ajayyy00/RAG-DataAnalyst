@@ -9,17 +9,50 @@ logger = structlog.get_logger(__name__)
 
 # Column type heuristics
 TEMPORAL_KEYWORDS = {
-    "date", "time", "year", "month", "quarter", "week",
-    "day", "dt", "timestamp", "period",
+    "date",
+    "time",
+    "year",
+    "month",
+    "quarter",
+    "week",
+    "day",
+    "dt",
+    "timestamp",
+    "period",
 }
 CATEGORICAL_KEYWORDS = {
-    "name", "type", "status", "category", "group", "dept",
-    "facility", "icd", "cpt", "code", "desc", "payer",
+    "name",
+    "type",
+    "status",
+    "category",
+    "group",
+    "dept",
+    "facility",
+    "icd",
+    "cpt",
+    "code",
+    "desc",
+    "payer",
 }
 NUMERIC_KEYWORDS = {
-    "count", "total", "sum", "avg", "rate", "pct", "percent",
-    "amount", "cost", "charge", "payment", "days", "score",
-    "value", "mean", "median", "max", "min",
+    "count",
+    "total",
+    "sum",
+    "avg",
+    "rate",
+    "pct",
+    "percent",
+    "amount",
+    "cost",
+    "charge",
+    "payment",
+    "days",
+    "score",
+    "value",
+    "mean",
+    "median",
+    "max",
+    "min",
 }
 
 
@@ -40,7 +73,9 @@ class ChartGenerationService:
     def _is_numeric_value(self, values: List[Any]) -> bool:
         """Check if a column contains primarily numeric values."""
         numeric_count = sum(
-            1 for v in values[:20] if v is not None and str(v).replace(".", "").replace("-", "").isdigit()
+            1
+            for v in values[:20]
+            if v is not None and str(v).replace(".", "").replace("-", "").isdigit()
         )
         return numeric_count > len(values[:20]) * 0.7
 
@@ -114,10 +149,14 @@ class ChartGenerationService:
             "series_keys": series_keys,
             "config": {"animate": True, "legend": len(series_keys) > 1},
         }
-        logger.info("Chart type recommended", chart_type=chart_type, x_key=x_key, y_key=y_key)
+        logger.info(
+            "Chart type recommended", chart_type=chart_type, x_key=x_key, y_key=y_key
+        )
         return config
 
-    def _build_title(self, chart_type: str, x_key: Optional[str], y_key: Optional[str]) -> str:
+    def _build_title(
+        self, chart_type: str, x_key: Optional[str], y_key: Optional[str]
+    ) -> str:
         if y_key and x_key:
             return f"{y_key.replace('_', ' ').title()} by {x_key.replace('_', ' ').title()}"
         if y_key:

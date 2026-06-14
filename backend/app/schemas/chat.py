@@ -51,26 +51,30 @@ class ChartConfig(BaseModel):
 
 # ── Rich Insights Schema ──────────────────────────────────────
 
+
 class Recommendation(BaseModel):
     """A single actionable recommendation with priority context."""
-    priority: str          # "high" | "medium" | "low"
-    action: str            # Short imperative action
-    rationale: str         # Why this matters clinically / operationally
-    metric: Optional[str] = None   # Relevant KPI or data point
+
+    priority: str  # "high" | "medium" | "low"
+    action: str  # Short imperative action
+    rationale: str  # Why this matters clinically / operationally
+    metric: Optional[str] = None  # Relevant KPI or data point
 
 
 class InsightReport(BaseModel):
     """Structured AI insight report returned for every query."""
-    summary: str                          # 1-2 sentence plain-English summary
-    trends: List[str] = []               # Key trends observed in the data
-    anomalies: List[str] = []            # Outliers / unexpected values
+
+    summary: str  # 1-2 sentence plain-English summary
+    trends: List[str] = []  # Key trends observed in the data
+    anomalies: List[str] = []  # Outliers / unexpected values
     recommendations: List[Recommendation] = []
     follow_up_questions: List[str] = []  # Suggested next questions
-    data_quality_notes: List[str] = []   # Missing data, coverage gaps, etc.
-    confidence: str = "medium"           # "high" | "medium" | "low"
+    data_quality_notes: List[str] = []  # Missing data, coverage gaps, etc.
+    confidence: str = "medium"  # "high" | "medium" | "low"
 
 
 # ── API Models ────────────────────────────────────────────────
+
 
 class QueryMeta(BaseModel):
     model: str
@@ -86,8 +90,8 @@ class ChatQueryResponse(BaseModel):
     sql: Optional[SQLResult] = None
     results: Optional[QueryResultData] = None
     chart: Optional[ChartConfig] = None
-    insights: List[str] = []            # legacy flat list (backward compat)
-    insight_report: Optional[InsightReport] = None   # rich structured output
+    insights: List[str] = []  # legacy flat list (backward compat)
+    insight_report: Optional[InsightReport] = None  # rich structured output
     metadata: QueryMeta
 
 

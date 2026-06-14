@@ -19,7 +19,7 @@ export const chatApi = {
 
     if (!res.ok) {
       let detail = ''
-      try { detail = await res.text() } catch (_) {}
+      try { detail = await res.text() } catch (_) { /* ignore empty block */ }
       throw new Error(`API error ${res.status}: ${detail || res.statusText}`)
     }
 
@@ -28,6 +28,7 @@ export const chatApi = {
     let resultData = null
     let buffer = ''
 
+    // eslint-disable-next-line no-constant-condition
     while (true) {
       const { value, done } = await reader.read()
       if (done) break

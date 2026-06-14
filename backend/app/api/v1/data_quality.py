@@ -1,14 +1,15 @@
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-import structlog
 
-from app.dependencies import get_db, get_current_user
 from app.db.models.user import User, UserRole
+from app.dependencies import get_current_user, get_db
 from app.schemas.data_quality import DataQualityAnalyzeRequest, DataQualityReport
 from app.services.data_quality_service import DataQualityService
 
 log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/data-quality", tags=["data-quality"])
+
 
 @router.post("/analyze", response_model=DataQualityReport)
 async def analyze_table_quality(
@@ -23,7 +24,7 @@ async def analyze_table_quality(
     if current_user.role not in [UserRole.ADMIN, UserRole.ANALYST]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to run data quality analysis."
+            detail="You do not have permission to run data quality analysis.",
         )
 
     try:
@@ -34,4 +35,6 @@ async def analyze_table_quality(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         log.error("Data Quality analysis failed", error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error during analysis")
+        raise HTTPException(
+            status_code=500, detail="Internal server error during analysis"
+        )

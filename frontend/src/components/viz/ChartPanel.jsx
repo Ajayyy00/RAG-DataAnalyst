@@ -1,5 +1,5 @@
 import {
-  BarChart, Bar, LineChart, Line, Area, AreaChart,
+  BarChart, Bar, Area, AreaChart,
   PieChart, Pie, Cell, ScatterChart, Scatter,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, LabelList,

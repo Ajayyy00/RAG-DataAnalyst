@@ -33,39 +33,40 @@ log = structlog.get_logger(__name__)
 # ── Domain glossary ────────────────────────────────────────────────────────────
 # Enriches column names with clinical meaning for better embedding quality.
 CLINICAL_GLOSSARY: dict[str, str] = {
-    "icd10_code":       "ICD-10-CM diagnostic code",
-    "icd9_code":        "ICD-9-CM legacy diagnostic code",
-    "cpt_code":         "CPT procedure billing code",
-    "ndc_code":         "National Drug Code (medication identifier)",
-    "drg_code":         "Diagnosis Related Group for billing",
-    "hcc_code":         "Hierarchical Condition Category risk score",
-    "snomed_code":      "SNOMED CT clinical terminology code",
-    "loinc_code":       "LOINC lab test identifier",
-    "admit_date":       "hospital admission date",
-    "discharge_date":   "hospital discharge date",
-    "dob":              "patient date of birth",
-    "date_of_birth":    "patient date of birth",
-    "los":              "length of stay in days",
-    "readmitted":       "flag indicating 30-day readmission",
-    "hba1c":            "glycated haemoglobin (diabetes control marker)",
-    "bmi":              "body mass index",
-    "systolic_bp":      "systolic blood pressure (mmHg)",
-    "diastolic_bp":     "diastolic blood pressure (mmHg)",
-    "glucose":          "blood glucose level (mg/dL)",
-    "creatinine":       "serum creatinine (kidney function marker)",
-    "egfr":             "estimated glomerular filtration rate (kidney function)",
-    "troponin":         "cardiac troponin (heart attack marker)",
-    "wbc":              "white blood cell count",
-    "hgb":              "haemoglobin level",
-    "encounter_type":   "type of clinical encounter (inpatient/outpatient/ED)",
+    "icd10_code": "ICD-10-CM diagnostic code",
+    "icd9_code": "ICD-9-CM legacy diagnostic code",
+    "cpt_code": "CPT procedure billing code",
+    "ndc_code": "National Drug Code (medication identifier)",
+    "drg_code": "Diagnosis Related Group for billing",
+    "hcc_code": "Hierarchical Condition Category risk score",
+    "snomed_code": "SNOMED CT clinical terminology code",
+    "loinc_code": "LOINC lab test identifier",
+    "admit_date": "hospital admission date",
+    "discharge_date": "hospital discharge date",
+    "dob": "patient date of birth",
+    "date_of_birth": "patient date of birth",
+    "los": "length of stay in days",
+    "readmitted": "flag indicating 30-day readmission",
+    "hba1c": "glycated haemoglobin (diabetes control marker)",
+    "bmi": "body mass index",
+    "systolic_bp": "systolic blood pressure (mmHg)",
+    "diastolic_bp": "diastolic blood pressure (mmHg)",
+    "glucose": "blood glucose level (mg/dL)",
+    "creatinine": "serum creatinine (kidney function marker)",
+    "egfr": "estimated glomerular filtration rate (kidney function)",
+    "troponin": "cardiac troponin (heart attack marker)",
+    "wbc": "white blood cell count",
+    "hgb": "haemoglobin level",
+    "encounter_type": "type of clinical encounter (inpatient/outpatient/ED)",
     "discharge_disposition": "patient destination after discharge",
-    "payer_type":       "insurance/payer category",
-    "claim_status":     "billing claim processing status",
-    "diagnosis_rank":   "primary vs secondary diagnosis ordering",
+    "payer_type": "insurance/payer category",
+    "claim_status": "billing claim processing status",
+    "diagnosis_rank": "primary vs secondary diagnosis ordering",
 }
 
 
 # ── Data classes ───────────────────────────────────────────────────────────────
+
 
 @dataclass
 class ColumnInfo:
@@ -156,9 +157,11 @@ class TableInfo:
         col_text = "; ".join(c.to_text() for c in self.columns)
         fk_text = ""
         if self.foreign_keys:
-            fk_text = " Related to: " + ", ".join(
-                f"{c.fk_table}" for c in self.foreign_keys if c.fk_table
-            ) + "."
+            fk_text = (
+                " Related to: "
+                + ", ".join(f"{c.fk_table}" for c in self.foreign_keys if c.fk_table)
+                + "."
+            )
 
         purpose = self.comment or self._infer_purpose()
         return (
@@ -200,9 +203,12 @@ class TableInfo:
         lines.append("")
         for col in self.columns:
             tags: list[str] = []
-            if col.is_primary_key:       tags.append("PK")
-            if col.is_foreign_key:       tags.append(f"FK→{col.fk_table}")
-            if not col.nullable:         tags.append("NOT NULL")
+            if col.is_primary_key:
+                tags.append("PK")
+            if col.is_foreign_key:
+                tags.append(f"FK→{col.fk_table}")
+            if not col.nullable:
+                tags.append("NOT NULL")
             tag_str = f" `[{', '.join(tags)}]`" if tags else ""
             meaning = f" — {col.effective_comment}" if col.effective_comment else ""
             lines.append(f"- `{col.name}` {col.data_type}{tag_str}{meaning}")
@@ -222,23 +228,24 @@ class TableInfo:
     def _infer_purpose(self) -> str:
         """Heuristic table purpose from name when no comment exists."""
         mapping = {
-            "patients":    "stores demographic information for all registered patients",
-            "encounters":  "records individual clinical encounters (inpatient, outpatient, ED visits)",
-            "diagnoses":   "stores ICD-10 diagnostic codes assigned during encounters",
-            "procedures":  "records CPT/surgical procedures performed during encounters",
+            "patients": "stores demographic information for all registered patients",
+            "encounters": "records individual clinical encounters (inpatient, outpatient, ED visits)",
+            "diagnoses": "stores ICD-10 diagnostic codes assigned during encounters",
+            "procedures": "records CPT/surgical procedures performed during encounters",
             "medications": "tracks prescribed and administered medications per encounter",
             "lab_results": "stores laboratory test results (LOINC-coded) per encounter",
             "vital_signs": "records clinical measurements (BP, HR, weight, temperature, SpO2)",
-            "claims":      "billing claims submitted to payers per encounter",
-            "readmissions":"tracks 30-day hospital readmission events",
-            "providers":   "directory of clinical providers (physicians, nurses, specialists)",
+            "claims": "billing claims submitted to payers per encounter",
+            "readmissions": "tracks 30-day hospital readmission events",
+            "providers": "directory of clinical providers (physicians, nurses, specialists)",
             "departments": "hospital departments and care units",
-            "facilities":  "hospital sites and facility metadata",
+            "facilities": "hospital sites and facility metadata",
         }
         return mapping.get(self.name, f"stores {self.name.replace('_', ' ')} data")
 
 
 # ── Extractor ──────────────────────────────────────────────────────────────────
+
 
 class SchemaExtractor:
     """
@@ -252,11 +259,23 @@ class SchemaExtractor:
 
     # Tables in the allowed query allowlist (must match sql_validation_service.py)
     TARGET_TABLES: list[str] = [
-        "patients", "encounters", "diagnoses", "procedures",
-        "medications", "lab_results", "vital_signs", "claims",
-        "readmissions", "providers", "departments", "facilities",
-        "insurance_plans", "allergies", "immunizations",
-        "care_plans", "observations",
+        "patients",
+        "encounters",
+        "diagnoses",
+        "procedures",
+        "medications",
+        "lab_results",
+        "vital_signs",
+        "claims",
+        "readmissions",
+        "providers",
+        "departments",
+        "facilities",
+        "insurance_plans",
+        "allergies",
+        "immunizations",
+        "care_plans",
+        "observations",
     ]
 
     def __init__(self, db: AsyncSession) -> None:
@@ -267,9 +286,9 @@ class SchemaExtractor:
         tables: list[TableInfo] = []
 
         row_counts = await self._fetch_row_counts()
-        pk_map     = await self._fetch_primary_keys()
-        fk_map     = await self._fetch_foreign_keys()
-        idx_map    = await self._fetch_indexes()
+        pk_map = await self._fetch_primary_keys()
+        fk_map = await self._fetch_foreign_keys()
+        idx_map = await self._fetch_indexes()
         tbl_comments = await self._fetch_table_comments()
 
         for table_name in self.TARGET_TABLES:
@@ -346,11 +365,13 @@ class SchemaExtractor:
         """))
         fk_map: dict[str, list[dict]] = {}
         for row in result.fetchall():
-            fk_map.setdefault(row.table_name, []).append({
-                "column":    row.column_name,
-                "fk_table":  row.fk_table,
-                "fk_column": row.fk_column,
-            })
+            fk_map.setdefault(row.table_name, []).append(
+                {
+                    "column": row.column_name,
+                    "fk_table": row.fk_table,
+                    "fk_column": row.fk_column,
+                }
+            )
         return fk_map
 
     async def _fetch_indexes(self) -> dict[str, list[str]]:
@@ -430,24 +451,26 @@ class SchemaExtractor:
         if not rows:
             return []
 
-        pks  = pk_map.get(table_name, set())
-        fks  = {fk["column"]: fk for fk in fk_map.get(table_name, [])}
+        pks = pk_map.get(table_name, set())
+        fks = {fk["column"]: fk for fk in fk_map.get(table_name, [])}
 
         columns: list[ColumnInfo] = []
         for row in rows:
             fk_info = fks.get(row.column_name, {})
-            columns.append(ColumnInfo(
-                name          = row.column_name,
-                data_type     = row.data_type,
-                nullable      = row.is_nullable == "YES",
-                default       = row.column_default,
-                is_primary_key= row.column_name in pks,
-                is_foreign_key= bool(fk_info),
-                fk_table      = fk_info.get("fk_table"),
-                fk_column     = fk_info.get("fk_column"),
-                comment       = row.col_comment,
-                ordinal       = row.ordinal_position,
-            ))
+            columns.append(
+                ColumnInfo(
+                    name=row.column_name,
+                    data_type=row.data_type,
+                    nullable=row.is_nullable == "YES",
+                    default=row.column_default,
+                    is_primary_key=row.column_name in pks,
+                    is_foreign_key=bool(fk_info),
+                    fk_table=fk_info.get("fk_table"),
+                    fk_column=fk_info.get("fk_column"),
+                    comment=row.col_comment,
+                    ordinal=row.ordinal_position,
+                )
+            )
         return columns
 
     @staticmethod

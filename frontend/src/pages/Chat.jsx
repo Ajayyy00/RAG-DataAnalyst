@@ -15,7 +15,7 @@ export default function Chat() {
   const qc = useQueryClient()
   const token = useAuthStore((s) => s.token)
 
-  const { messages, isStreaming, addUserMessage, addAssistantMessage, setStreaming, clearMessages, loadMessages } = useChatStore()
+  const { addUserMessage, addAssistantMessage, setStreaming, loadMessages } = useChatStore()
   const { activeSessionId, setActiveSession, addSession } = useSessionStore()
 
   const isDemo = token === 'demo-jwt-token-not-real'

@@ -1,10 +1,6 @@
 """Async SQLAlchemy engine and session factory."""
 
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import get_settings
 from app.db.base import Base  # noqa: F401  — import so Base knows all models
@@ -24,6 +20,7 @@ engine = create_async_engine(
 
 try:
     from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+
     SQLAlchemyInstrumentor().instrument(
         engine=engine.sync_engine,
     )

@@ -32,23 +32,24 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+
+# Suppress noisy startup logs from ML libs
+import logging
 import time
 
 import structlog
 
-# Suppress noisy startup logs from ML libs
-import logging
 logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
 logging.getLogger("transformers").setLevel(logging.WARNING)
 logging.getLogger("chromadb").setLevel(logging.WARNING)
 
 
 async def run(force: bool, dry_run: bool, stats_only: bool) -> None:
-    from app.core.logging import setup_logging
     from app.config import get_settings
+    from app.core.logging import setup_logging
     from app.db.session import AsyncSessionLocal
-    from app.services.schema_extractor import SchemaExtractor
     from app.services.rag_service import RAGService
+    from app.services.schema_extractor import SchemaExtractor
 
     settings = get_settings()
     setup_logging(settings.log_level)
@@ -70,7 +71,7 @@ async def run(force: bool, dry_run: bool, stats_only: bool) -> None:
         print("\n[DRY RUN] Extracting schema from PostgreSQL...\n")
         async with AsyncSessionLocal() as db:
             extractor = SchemaExtractor(db)
-            tables    = await extractor.extract_all()
+            tables = await extractor.extract_all()
 
         print(f"[{len(tables)} tables found]\n")
         for t in tables:
@@ -96,7 +97,7 @@ async def run(force: bool, dry_run: bool, stats_only: bool) -> None:
 
     async with AsyncSessionLocal() as db:
         extractor = SchemaExtractor(db)
-        tables    = await extractor.extract_all()
+        tables = await extractor.extract_all()
         print(f"[{len(tables)} tables found]\n")
 
         result = await rag.index_schema(db=db, force=force)
@@ -126,7 +127,9 @@ async def run(force: bool, dry_run: bool, stats_only: bool) -> None:
     # Show collection total
     stats = rag.collection_stats()
     if stats["status"] == "ok":
-        print(f"ChromaDB collection: {stats['collection']} ({stats['total_chunks']} chunks total)")
+        print(
+            f"ChromaDB collection: {stats['collection']} ({stats['total_chunks']} chunks total)"
+        )
 
     print(f"Completed in {elapsed:.1f}s\n")
 
@@ -135,10 +138,20 @@ async def run(force: bool, dry_run: bool, stats_only: bool) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Index PostgreSQL schema into ChromaDB")
-    parser.add_argument("--force",    action="store_true", help="Re-index all tables regardless of hash")
-    parser.add_argument("--dry-run",  action="store_true", help="Show what would be indexed without writing")
-    parser.add_argument("--stats",    action="store_true", help="Show ChromaDB collection stats and exit")
+    parser = argparse.ArgumentParser(
+        description="Index PostgreSQL schema into ChromaDB"
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="Re-index all tables regardless of hash"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be indexed without writing",
+    )
+    parser.add_argument(
+        "--stats", action="store_true", help="Show ChromaDB collection stats and exit"
+    )
     args = parser.parse_args()
 
     asyncio.run(run(force=args.force, dry_run=args.dry_run, stats_only=args.stats))

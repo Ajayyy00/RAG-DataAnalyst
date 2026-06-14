@@ -1,5 +1,7 @@
 from typing import List, Optional
+
 from pydantic import BaseModel
+
 
 class EvaluationResult(BaseModel):
     id: str
@@ -14,6 +16,7 @@ class EvaluationResult(BaseModel):
     total_tokens: int
     cost_usd: float
     error: Optional[str] = None
+
 
 class BenchmarkReport(BaseModel):
     total_queries: int

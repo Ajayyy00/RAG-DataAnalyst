@@ -71,4 +71,6 @@ async def change_password(
     db: DbSession,
 ) -> None:
     service = AuthService(db)
-    await service.change_password(current_user, data.current_password, data.new_password)
+    await service.change_password(
+        current_user, data.current_password, data.new_password
+    )

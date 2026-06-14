@@ -23,8 +23,8 @@ from enum import Enum, auto
 from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 
 import sqlglot
-import sqlglot.expressions as exp
 import sqlglot.errors
+import sqlglot.expressions as exp
 import structlog
 
 from app.core.exceptions import SQLValidationError
@@ -36,42 +36,87 @@ logger = structlog.get_logger(__name__)
 #  Configuration
 # ──────────────────────────────────────────────────────────────
 
+
 class RiskLevel(Enum):
-    LOW    = auto()
+    LOW = auto()
     MEDIUM = auto()
-    HIGH   = auto()
+    HIGH = auto()
     CRITICAL = auto()
 
 
 # Tables the copilot is permitted to query
-ALLOWED_TABLES: FrozenSet[str] = frozenset({
-    "patients", "encounters", "diagnoses", "procedures",
-    "medications", "lab_results", "vital_signs", "claims",
-    "readmissions", "providers", "departments", "facilities",
-    "copilot_sessions", "copilot_messages",
-})
+ALLOWED_TABLES: FrozenSet[str] = frozenset(
+    {
+        "patients",
+        "encounters",
+        "diagnoses",
+        "procedures",
+        "medications",
+        "lab_results",
+        "vital_signs",
+        "claims",
+        "readmissions",
+        "providers",
+        "departments",
+        "facilities",
+        "copilot_sessions",
+        "copilot_messages",
+    }
+)
 
 # DML / DDL expression types that are NEVER permitted (AST-level)
 BLOCKED_STATEMENT_TYPES: Tuple[type, ...] = (
-    exp.Insert, exp.Update, exp.Delete, exp.Drop,
-    exp.Create, exp.AlterTable, exp.TruncateTable,
-    exp.Merge, exp.Command,  # EXEC / raw commands
+    exp.Insert,
+    exp.Update,
+    exp.Delete,
+    exp.Drop,
+    exp.Create,
+    exp.AlterTable,
+    exp.TruncateTable,
+    exp.Merge,
+    exp.Command,  # EXEC / raw commands
 )
 
 # Supplementary keyword block list (catches obfuscation the AST may miss)
-BLOCKED_KEYWORDS: FrozenSet[str] = frozenset({
-    "INSERT", "UPDATE", "DELETE", "DROP", "TRUNCATE", "ALTER",
-    "CREATE", "REPLACE", "MERGE", "EXEC", "EXECUTE",
-    "GRANT", "REVOKE", "COPY", "VACUUM", "ANALYZE",
-    "REINDEX", "CLUSTER", "COMMENT", "SECURITY",
-    "CALL", "DO", "LOAD", "IMPORT",
-})
+BLOCKED_KEYWORDS: FrozenSet[str] = frozenset(
+    {
+        "INSERT",
+        "UPDATE",
+        "DELETE",
+        "DROP",
+        "TRUNCATE",
+        "ALTER",
+        "CREATE",
+        "REPLACE",
+        "MERGE",
+        "EXEC",
+        "EXECUTE",
+        "GRANT",
+        "REVOKE",
+        "COPY",
+        "VACUUM",
+        "ANALYZE",
+        "REINDEX",
+        "CLUSTER",
+        "COMMENT",
+        "SECURITY",
+        "CALL",
+        "DO",
+        "LOAD",
+        "IMPORT",
+    }
+)
 
 # Schemas that analysts should never be able to read
-BLOCKED_SCHEMAS: FrozenSet[str] = frozenset({
-    "pg_catalog", "information_schema", "pg_toast",
-    "pg_temp", "pg_internal",
-})
+BLOCKED_SCHEMAS: FrozenSet[str] = frozenset(
+    {
+        "pg_catalog",
+        "information_schema",
+        "pg_toast",
+        "pg_temp",
+        "pg_internal",
+    }
+)
 
 # Regex patterns compiled once at module load
 _BLOCKED_KW_RE: Dict[str, re.Pattern] = {
@@ -88,42 +133,43 @@ _COMMENT_PROBE_RE = re.compile(r"(--|#|/\*|\*/)")
 # Injection: classic tautology patterns
 _TAUTOLOGY_RE = re.compile(
     r"\b(OR|AND)\b\s+[\w']+=\s*[\w']+\s+--"
-    r"|'[^']*'\s*=\s*'[^']*'"     # 'a'='a'
-    r"|\b1\s*=\s*1\b"             # 1=1
-    r"|\b''\s*=\s*''\b",          # ''=''
+    r"|'[^']*'\s*=\s*'[^']*'"  # 'a'='a'
+    r"|\b1\s*=\s*1\b"  # 1=1
+    r"|\b''\s*=\s*''\b",  # ''=''
     re.IGNORECASE,
 )
 
 # Complexity scoring weights
 _COMPLEXITY_WEIGHTS = {
-    "join":        3,   # per JOIN
-    "subquery":    4,   # per subselect / derived table
-    "cte":         2,   # per CTE
-    "aggregate":   1,   # per aggregate function
-    "window":      3,   # per window function
-    "union":       2,   # per UNION / INTERSECT / EXCEPT
-    "cross_join":  8,   # CROSS JOIN is especially expensive
-    "distinct":    2,
-    "order_by":    1,
-    "having":      1,
+    "join": 3,  # per JOIN
+    "subquery": 4,  # per subselect / derived table
+    "cte": 2,  # per CTE
+    "aggregate": 1,  # per aggregate function
+    "window": 3,  # per window function
+    "union": 2,  # per UNION / INTERSECT / EXCEPT
+    "cross_join": 8,  # CROSS JOIN is especially expensive
+    "distinct": 2,
+    "order_by": 1,
+    "having": 1,
 }
-MAX_COMPLEXITY = 30   # queries above this are rejected as too complex
+MAX_COMPLEXITY = 30  # queries above this are rejected as too complex
 
 
 # ──────────────────────────────────────────────────────────────
 #  Result dataclass
 # ──────────────────────────────────────────────────────────────
 
+
 @dataclass
 class ValidationResult:
     is_valid: bool
     normalized_sql: str
     violations: List[str] = field(default_factory=list)
-    warnings: List[str]   = field(default_factory=list)
-    complexity_score: int  = 0
-    risk_level: RiskLevel  = RiskLevel.LOW
+    warnings: List[str] = field(default_factory=list)
+    complexity_score: int = 0
+    risk_level: RiskLevel = RiskLevel.LOW
     referenced_tables: Set[str] = field(default_factory=set)
-    cte_names: Set[str]         = field(default_factory=set)
+    cte_names: Set[str] = field(default_factory=set)
 
     def add_violation(self, msg: str) -> None:
         self.violations.append(msg)
@@ -136,6 +182,7 @@ class ValidationResult:
 # ──────────────────────────────────────────────────────────────
 #  Complexity Scorer
 # ──────────────────────────────────────────────────────────────
+
 
 class ComplexityScorer:
     """Walk AST and assign a numeric complexity score."""
@@ -154,7 +201,8 @@ class ComplexityScorer:
 
         # Subqueries / derived tables
         subqueries = [
-            n for n in statement.find_all(exp.Subquery)
+            n
+            for n in statement.find_all(exp.Subquery)
             if n is not statement  # top-level is not a subquery itself
         ]
         if subqueries:
@@ -192,16 +240,14 @@ class ComplexityScorer:
         if statement.find(exp.Having):
             breakdown["having"] = 1
 
-        total = sum(
-            _COMPLEXITY_WEIGHTS.get(k, 1) * v
-            for k, v in breakdown.items()
-        )
+        total = sum(_COMPLEXITY_WEIGHTS.get(k, 1) * v for k, v in breakdown.items())
         return total, breakdown
 
 
 # ──────────────────────────────────────────────────────────────
 #  Injection Detector
 # ──────────────────────────────────────────────────────────────
+
 
 class InjectionDetector:
     """Heuristic SQL injection & probe detection."""
@@ -250,6 +296,7 @@ class InjectionDetector:
 #  Main Validation Service
 # ──────────────────────────────────────────────────────────────
 
+
 class SQLValidationService:
     """
     Full SQL validation & safety engine.
@@ -266,7 +313,7 @@ class SQLValidationService:
     """
 
     def __init__(self) -> None:
-        self._scorer   = ComplexityScorer()
+        self._scorer = ComplexityScorer()
         self._detector = InjectionDetector()
 
     # ── Public API ────────────────────────────────────────────
@@ -349,12 +396,12 @@ class SQLValidationService:
 
     # ── Private pipeline steps ────────────────────────────────
 
-    def _parse(
-        self, sql: str, result: ValidationResult
-    ) -> Optional[exp.Expression]:
+    def _parse(self, sql: str, result: ValidationResult) -> Optional[exp.Expression]:
         """Parse SQL with sqlglot. Returns the first statement or None."""
         try:
-            parsed = sqlglot.parse(sql, dialect="postgres", error_level=sqlglot.ErrorLevel.RAISE)
+            parsed = sqlglot.parse(
+                sql, dialect="postgres", error_level=sqlglot.ErrorLevel.RAISE
+            )
             if not parsed:
                 result.add_violation("SQL is empty or could not be parsed")
                 return None
@@ -425,22 +472,14 @@ class SQLValidationService:
         """Every real table reference must appear in ALLOWED_TABLES."""
         # Collect CTE alias names — they are virtual, not real tables
         result.cte_names = {
-            cte.alias.lower()
-            for cte in statement.find_all(exp.CTE)
-            if cte.alias
+            cte.alias.lower() for cte in statement.find_all(exp.CTE) if cte.alias
         }
 
         result.referenced_tables = {
-            t.name.lower()
-            for t in statement.find_all(exp.Table)
-            if t.name
+            t.name.lower() for t in statement.find_all(exp.Table) if t.name
         }
 
-        unknown = (
-            result.referenced_tables
-            - ALLOWED_TABLES
-            - result.cte_names
-        )
+        unknown = result.referenced_tables - ALLOWED_TABLES - result.cte_names
         if unknown:
             result.add_violation(
                 f"Unauthorized table(s) referenced: {', '.join(sorted(unknown))}"
@@ -450,6 +489,7 @@ class SQLValidationService:
         self, statement: exp.Expression, result: ValidationResult
     ) -> None:
         """Block access to pg_catalog / information_schema."""
+
         def _node_str(node) -> str:
             """Safely extract string value from a sqlglot node or plain string."""
             if node is None:
@@ -460,9 +500,9 @@ class SQLValidationService:
             return (getattr(node, "name", None) or "").lower()
 
         for table in statement.find_all(exp.Table):
-            db     = _node_str(table.args.get("db"))
+            db = _node_str(table.args.get("db"))
             schema = _node_str(table.args.get("catalog"))
-            name   = _node_str(table.name)
+            name = _node_str(table.name)
             for blocked in BLOCKED_SCHEMAS:
                 if blocked in (db, schema, name):
                     result.add_violation(
@@ -538,6 +578,7 @@ class SQLValidationService:
 # ──────────────────────────────────────────────────────────────
 #  Convenience function for one-off validation
 # ──────────────────────────────────────────────────────────────
+
 
 def validate_sql(sql: str) -> ValidationResult:
     """Module-level convenience wrapper."""

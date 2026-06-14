@@ -3,27 +3,43 @@ seed_db.py
 ==========
 Synthetic clinical data seeder for Healthcare Copilot using Faker.
 """
+
 import asyncio
 import random
 from datetime import date, timedelta
-from faker import Faker
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
 
+from faker import Faker
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models import (
+    Department,
+    Diagnosis,
+    Encounter,
+    Facility,
+    LabResult,
+    Patient,
+    Provider,
+)
 from app.db.session import AsyncSessionLocal
-from app.db.models import Patient, Encounter, Diagnosis, LabResult, Department, Provider, Facility
 
 fake = Faker()
 
+
 async def clear_db(db: AsyncSession):
-    await db.execute(text("TRUNCATE TABLE lab_results, diagnoses, encounters, patients, providers, departments, facilities CASCADE;"))
+    await db.execute(
+        text(
+            "TRUNCATE TABLE lab_results, diagnoses, encounters, patients, providers, departments, facilities CASCADE;"
+        )
+    )
     await db.commit()
+
 
 async def seed_data():
     async with AsyncSessionLocal() as db:
         print("Clearing existing data...")
         await clear_db(db)
-        
+
         print("Seeding facilities and departments...")
         fac1 = Facility(name="General Hospital", facility_type="Hospital", state="CA")
         fac2 = Facility(name="Westside Clinic", facility_type="Clinic", state="CA")
@@ -38,9 +54,27 @@ async def seed_data():
 
         print("Seeding providers...")
         providers = [
-            Provider(npi=str(fake.unique.random_number(digits=10)), first_name=fake.first_name(), last_name=fake.last_name(), specialty="Cardiologist", department_id=dep1.id),
-            Provider(npi=str(fake.unique.random_number(digits=10)), first_name=fake.first_name(), last_name=fake.last_name(), specialty="Endocrinologist", department_id=dep2.id),
-            Provider(npi=str(fake.unique.random_number(digits=10)), first_name=fake.first_name(), last_name=fake.last_name(), specialty="General Practitioner", department_id=dep3.id),
+            Provider(
+                npi=str(fake.unique.random_number(digits=10)),
+                first_name=fake.first_name(),
+                last_name=fake.last_name(),
+                specialty="Cardiologist",
+                department_id=dep1.id,
+            ),
+            Provider(
+                npi=str(fake.unique.random_number(digits=10)),
+                first_name=fake.first_name(),
+                last_name=fake.last_name(),
+                specialty="Endocrinologist",
+                department_id=dep2.id,
+            ),
+            Provider(
+                npi=str(fake.unique.random_number(digits=10)),
+                first_name=fake.first_name(),
+                last_name=fake.last_name(),
+                specialty="General Practitioner",
+                department_id=dep3.id,
+            ),
         ]
         db.add_all(providers)
         await db.flush()
@@ -55,7 +89,7 @@ async def seed_data():
                 last_name=fake.last_name(),
                 date_of_birth=dob,
                 gender=random.choice(["M", "F"]),
-                zip_code=fake.zipcode()[:5]
+                zip_code=fake.zipcode()[:5],
             )
             patients.append(p)
         db.add_all(patients)
@@ -75,7 +109,7 @@ async def seed_data():
                     department_id=random.choice([dep1, dep2, dep3]).id,
                     admit_date=enc_date,
                     discharge_date=disc_date,
-                    encounter_type=enc_type
+                    encounter_type=enc_type,
                 )
                 db.add(enc)
                 await db.flush()
@@ -90,16 +124,17 @@ async def seed_data():
                         department_id=random.choice([dep1, dep2, dep3]).id,
                         admit_date=re_admit,
                         discharge_date=re_disc,
-                        encounter_type="inpatient"
+                        encounter_type="inpatient",
                     )
                     db.add(re_enc)
                     await db.flush()
                     from app.db.models import Readmission
+
                     readmission = Readmission(
                         index_encounter_id=enc.id,
                         readmit_encounter_id=re_enc.id,
                         patient_id=p.id,
-                        days_to_readmit=(re_admit.date() - disc_date.date()).days
+                        days_to_readmit=(re_admit.date() - disc_date.date()).days,
                     )
                     db.add(readmission)
                     await db.flush()
@@ -112,7 +147,7 @@ async def seed_data():
                         "I25.10": "Heart Disease",
                         "J45.909": "Asthma",
                         "E78.5": "Hyperlipidemia",
-                        "K21.9": "GERD"
+                        "K21.9": "GERD",
                     }
                     code = random.choice(list(icd_map.keys()))
                     diag = Diagnosis(
@@ -120,7 +155,7 @@ async def seed_data():
                         patient_id=p.id,
                         icd10_code=code,
                         icd10_desc=icd_map[code],
-                        diagnosis_type="Primary"
+                        diagnosis_type="Primary",
                     )
                     db.add(diag)
 
@@ -132,17 +167,18 @@ async def seed_data():
                         ("Atorvastatin", "20 mg"),
                         ("Albuterol", "90 mcg"),
                         ("Omeprazole", "40 mg"),
-                        ("Aspirin", "81 mg")
+                        ("Aspirin", "81 mg"),
                     ]
                     med_name, dose = random.choice(med_map)
                     from app.db.models import Medication
+
                     med = Medication(
                         encounter_id=enc.id,
                         patient_id=p.id,
                         drug_name=med_name,
                         dose=dose,
                         route="Oral",
-                        frequency="Daily"
+                        frequency="Daily",
                     )
                     db.add(med)
 
@@ -154,9 +190,9 @@ async def seed_data():
                         encounter_id=enc.id,
                         loinc_code="2345-7",
                         test_name="Glucose",
-                        numeric_value=random.uniform(70.0, 200.0), # > 125 is high
+                        numeric_value=random.uniform(70.0, 200.0),  # > 125 is high
                         unit="mg/dL",
-                        result_date=enc_date
+                        result_date=enc_date,
                     )
                     # A1C test
                     lab2 = LabResult(
@@ -166,13 +202,14 @@ async def seed_data():
                         test_name="HbA1c",
                         numeric_value=random.uniform(4.0, 9.0),
                         unit="%",
-                        result_date=enc_date
+                        result_date=enc_date,
                     )
                     db.add_all([lab1, lab2])
 
         print("Committing to database...")
         await db.commit()
         print("Database seeded successfully with synthetic data!")
+
 
 if __name__ == "__main__":
     asyncio.run(seed_data())

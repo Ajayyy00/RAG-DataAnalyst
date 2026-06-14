@@ -21,6 +21,7 @@ security = HTTPBearer(auto_error=True)
 
 # ── Database ──────────────────────────────────────────────────────────────────
 
+
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Yield an async SQLAlchemy session, committing on success and rolling back on error."""
     async with AsyncSessionLocal() as session:
@@ -36,6 +37,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 # ── Redis ─────────────────────────────────────────────────────────────────────
 
+
 async def get_redis() -> AsyncGenerator[aioredis.Redis, None]:
     """Yield an async Redis client."""
     client: aioredis.Redis = aioredis.from_url(
@@ -50,6 +52,7 @@ async def get_redis() -> AsyncGenerator[aioredis.Redis, None]:
 
 
 # ── Authentication ────────────────────────────────────────────────────────────
+
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -68,7 +71,9 @@ async def get_current_user(
 
     user_id: str | None = payload.get("sub")
     if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Malformed token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Malformed token"
+        )
 
     result = await db.execute(
         select(User).where(User.id == user_id, User.is_active.is_(True))
@@ -76,7 +81,9 @@ async def get_current_user(
     user = result.scalar_one_or_none()
 
     if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
 
     return user
 
@@ -93,8 +100,12 @@ class RequireRole:
             )
         return current_user
 
-async def get_current_admin(current_user: User = Depends(RequireRole(["admin"]))) -> User:
+
+async def get_current_admin(
+    current_user: User = Depends(RequireRole(["admin"])),
+) -> User:
     return current_user
+
 
 # ── Type Aliases (for cleaner route signatures) ───────────────────────────────
 

@@ -1,13 +1,12 @@
 import { useState, useRef } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
 import {
   BarChart2, TrendingUp, PieChart, Activity, Sparkles,
   AlertCircle, ChevronDown, ChevronUp, Send, LayoutDashboard,
   Database, Layers,
 } from 'lucide-react'
 import {
-  BarChart, Bar, LineChart, Line, AreaChart, Area,
+  BarChart, Bar, AreaChart, Area,
   PieChart as RechartsPie, Pie, Cell,
   ScatterChart, Scatter,
   XAxis, YAxis, CartesianGrid, Tooltip,

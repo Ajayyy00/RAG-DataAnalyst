@@ -2,18 +2,34 @@
 
 from fastapi import APIRouter
 
-from app.api.v1 import auth, chat, sessions, schema_routes, finetune, rag, dashboard, data_quality, websockets, evaluation, knowledge_graph
+from app.api.v1 import (
+    auth,
+    chat,
+    dashboard,
+    data_quality,
+    evaluation,
+    finetune,
+    knowledge_graph,
+    rag,
+    schema_routes,
+    sessions,
+    websockets,
+)
 
 api_router = APIRouter()
 
-api_router.include_router(auth.router,          prefix="/auth",      tags=["Authentication"])
-api_router.include_router(chat.router,          prefix="/chat",      tags=["Chat & Query"])
-api_router.include_router(sessions.router,      prefix="/sessions",  tags=["Sessions"])
-api_router.include_router(schema_routes.router, prefix="/schema",    tags=["Schema"])
-api_router.include_router(rag.router,           prefix="/rag",       tags=["RAG Pipeline"])
-api_router.include_router(finetune.router,      prefix="/finetune",  tags=["Fine-Tuning"])
-api_router.include_router(dashboard.router,     prefix="/dashboard", tags=["Dashboard"])
-api_router.include_router(data_quality.router,  prefix="/data-quality", tags=["Data Quality"])
-api_router.include_router(websockets.router,    prefix="/ws",        tags=["Websockets"])
-api_router.include_router(evaluation.router,    prefix="/evaluation", tags=["Evaluation"])
-api_router.include_router(knowledge_graph.router, prefix="/kg",      tags=["Knowledge Graph"])
+api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+api_router.include_router(chat.router, prefix="/chat", tags=["Chat & Query"])
+api_router.include_router(sessions.router, prefix="/sessions", tags=["Sessions"])
+api_router.include_router(schema_routes.router, prefix="/schema", tags=["Schema"])
+api_router.include_router(rag.router, prefix="/rag", tags=["RAG Pipeline"])
+api_router.include_router(finetune.router, prefix="/finetune", tags=["Fine-Tuning"])
+api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
+api_router.include_router(
+    data_quality.router, prefix="/data-quality", tags=["Data Quality"]
+)
+api_router.include_router(websockets.router, prefix="/ws", tags=["Websockets"])
+api_router.include_router(evaluation.router, prefix="/evaluation", tags=["Evaluation"])
+api_router.include_router(
+    knowledge_graph.router, prefix="/kg", tags=["Knowledge Graph"]
+)

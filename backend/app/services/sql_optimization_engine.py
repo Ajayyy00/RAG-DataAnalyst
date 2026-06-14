@@ -4,20 +4,26 @@ import json
 from typing import Any, Dict, List
 
 import structlog
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 
 log = structlog.get_logger(__name__)
 settings = get_settings()
 
+
 class OptimizationResult(BaseModel):
-    optimized_sql: str = Field(description="The rewritten, highly optimized raw SQL query. Do not include markdown fences.")
-    index_suggestions: List[str] = Field(description="List of raw CREATE INDEX SQL commands that would speed up this query.")
+    optimized_sql: str = Field(
+        description="The rewritten, highly optimized raw SQL query. Do not include markdown fences."
+    )
+    index_suggestions: List[str] = Field(
+        description="List of raw CREATE INDEX SQL commands that would speed up this query."
+    )
+
 
 class SQLOptimizationEngine:
     def __init__(self):
@@ -39,13 +45,13 @@ class SQLOptimizationEngine:
             # We must wrap in a transaction or just execute, it's a read-only EXPLAIN
             result = await db.execute(text(f"EXPLAIN (FORMAT JSON) {sql}"))
             plan_data = result.scalar()
-            
+
             # plan_data is typically a list containing a single dictionary
             if isinstance(plan_data, str):
                 plan_json = json.loads(plan_data)
             else:
                 plan_json = plan_data
-                
+
             if isinstance(plan_json, list) and len(plan_json) > 0:
                 return plan_json[0].get("Plan", {})
             return plan_json.get("Plan", {}) if isinstance(plan_json, dict) else {}
@@ -60,14 +66,14 @@ class SQLOptimizationEngine:
         """
         if not plan:
             return False
-            
+
         total_cost = plan.get("Total Cost", 0)
-        
-        # Arbitrary threshold for "slow" query. 
+
+        # Arbitrary threshold for "slow" query.
         # In a real system, this might be dynamically calibrated.
         if total_cost > 1000.0:
             return True
-            
+
         # Recursive check for sequential scans
         def has_seq_scan(node: Dict[str, Any]) -> bool:
             if node.get("Node Type") == "Seq Scan":
@@ -76,7 +82,7 @@ class SQLOptimizationEngine:
                 if has_seq_scan(child):
                     return True
             return False
-            
+
         return has_seq_scan(plan)
 
     async def optimize(self, sql: str, plan: Dict[str, Any]) -> OptimizationResult:
@@ -84,20 +90,20 @@ class SQLOptimizationEngine:
         Uses an LLM to rewrite the SQL and suggest indexes based on the execution plan.
         """
         log.info("Optimizing SQL with LLM", plan_cost=plan.get("Total Cost"))
-        
+
         sys_msg = SystemMessage(
             content="You are an expert PostgreSQL Database Administrator and Query Optimizer.\n"
-                    "Your job is to analyze the provided SQL query and its PostgreSQL EXPLAIN execution plan.\n"
-                    "1. Rewrite the SQL to be mathematically equivalent but faster (e.g., using CTEs, proper JOINs, or window functions).\n"
-                    "2. Suggest optimal `CREATE INDEX` commands to speed up the query.\n"
-                    "Return the response in the requested structured JSON format."
+            "Your job is to analyze the provided SQL query and its PostgreSQL EXPLAIN execution plan.\n"
+            "1. Rewrite the SQL to be mathematically equivalent but faster (e.g., using CTEs, proper JOINs, or window functions).\n"
+            "2. Suggest optimal `CREATE INDEX` commands to speed up the query.\n"
+            "Return the response in the requested structured JSON format."
         )
-        
+
         plan_str = json.dumps(plan, indent=2)
         human_msg = HumanMessage(
             content=f"Original SQL:\n{sql}\n\nExecution Plan:\n{plan_str}"
         )
-        
+
         try:
             result = await self.llm.ainvoke([sys_msg, human_msg])
             return result
