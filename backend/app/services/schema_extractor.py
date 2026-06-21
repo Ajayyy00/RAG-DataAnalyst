@@ -317,19 +317,25 @@ class SchemaExtractor:
 
     async def _fetch_row_counts(self) -> dict[str, int]:
         """Fast approximate row counts from pg_stat — no sequential scans."""
-        result = await self._db.execute(text("""
+        result = await self._db.execute(
+            text(
+                """
             SELECT relname AS table_name, reltuples::BIGINT AS row_count
             FROM pg_class c
             JOIN pg_namespace n ON n.oid = c.relnamespace
             WHERE n.nspname = 'public'
               AND c.relkind = 'r'
               AND reltuples > 0
-        """))
+        """
+            )
+        )
         return {row.table_name: max(0, int(row.row_count)) for row in result.fetchall()}
 
     async def _fetch_primary_keys(self) -> dict[str, set[str]]:
         """Return {table_name: {pk_col1, pk_col2, ...}}."""
-        result = await self._db.execute(text("""
+        result = await self._db.execute(
+            text(
+                """
             SELECT
                 tc.table_name,
                 kcu.column_name
@@ -339,7 +345,9 @@ class SchemaExtractor:
                AND tc.table_schema    = kcu.table_schema
             WHERE tc.constraint_type = 'PRIMARY KEY'
               AND tc.table_schema    = 'public'
-        """))
+        """
+            )
+        )
         pk_map: dict[str, set[str]] = {}
         for row in result.fetchall():
             pk_map.setdefault(row.table_name, set()).add(row.column_name)
@@ -347,7 +355,9 @@ class SchemaExtractor:
 
     async def _fetch_foreign_keys(self) -> dict[str, list[dict]]:
         """Return {table_name: [{column, fk_table, fk_column}, ...]}."""
-        result = await self._db.execute(text("""
+        result = await self._db.execute(
+            text(
+                """
             SELECT
                 kcu.table_name,
                 kcu.column_name,
@@ -362,7 +372,9 @@ class SchemaExtractor:
                AND ccu.table_schema    = tc.table_schema
             WHERE tc.constraint_type = 'FOREIGN KEY'
               AND tc.table_schema    = 'public'
-        """))
+        """
+            )
+        )
         fk_map: dict[str, list[dict]] = {}
         for row in result.fetchall():
             fk_map.setdefault(row.table_name, []).append(
@@ -376,7 +388,9 @@ class SchemaExtractor:
 
     async def _fetch_indexes(self) -> dict[str, list[str]]:
         """Return {table_name: [index_definition, ...]} for non-PK indexes."""
-        result = await self._db.execute(text("""
+        result = await self._db.execute(
+            text(
+                """
             SELECT
                 t.relname AS table_name,
                 i.relname AS index_name,
@@ -397,7 +411,9 @@ class SchemaExtractor:
             WHERE n.nspname = 'public'
               AND t.relkind = 'r'
               AND NOT ix.indisprimary
-        """))
+        """
+            )
+        )
         idx_map: dict[str, list[str]] = {}
         for row in result.fetchall():
             unique = "UNIQUE " if row.is_unique else ""
@@ -408,7 +424,9 @@ class SchemaExtractor:
 
     async def _fetch_table_comments(self) -> dict[str, str]:
         """Return {table_name: comment_string} from pg_description."""
-        result = await self._db.execute(text("""
+        result = await self._db.execute(
+            text(
+                """
             SELECT
                 c.relname  AS table_name,
                 d.description
@@ -418,7 +436,9 @@ class SchemaExtractor:
             WHERE n.nspname = 'public'
               AND c.relkind = 'r'
               AND d.description IS NOT NULL
-        """))
+        """
+            )
+        )
         return {row.table_name: row.description for row in result.fetchall()}
 
     async def _fetch_columns(
@@ -429,7 +449,8 @@ class SchemaExtractor:
     ) -> list[ColumnInfo]:
         """Fetch ordered columns for a single table with type + nullability."""
         result = await self._db.execute(
-            text("""
+            text(
+                """
                 SELECT
                     c.column_name,
                     c.data_type,
@@ -444,7 +465,8 @@ class SchemaExtractor:
                 WHERE c.table_name   = :tname
                   AND c.table_schema = 'public'
                 ORDER BY c.ordinal_position
-            """),
+            """
+            ),
             {"tname": table_name},
         )
         rows = result.fetchall()

@@ -118,9 +118,11 @@ class EmbeddingService:
         show_progress: bool = False,
     ) -> list[list[float]]:
         """
-        Runs directly on the main thread to avoid PyTorch + ThreadPoolExecutor deadlocks on Windows.
+        Offload CPU-bound embedding to a worker thread so the asyncio event loop
+        is never blocked (which would serialize all concurrent requests).
         """
-        return self.encode_batch(
+        return await asyncio.to_thread(
+            self.encode_batch,
             texts,
             batch_size=batch_size,
             normalize=normalize,
@@ -130,5 +132,5 @@ class EmbeddingService:
     async def encode_single_async(
         self, text: str, normalize: bool = True
     ) -> list[float]:
-        """Runs directly on the main thread to avoid PyTorch + ThreadPoolExecutor deadlocks on Windows."""
-        return self.encode_single(text, normalize=normalize)
+        """Offload CPU-bound embedding to a worker thread (see encode_batch_async)."""
+        return await asyncio.to_thread(self.encode_single, text, normalize)

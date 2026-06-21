@@ -163,8 +163,10 @@ class KGIngestionService:
 
     async def _sync_diagnoses(self, db: AsyncSession):
         rows = await db.execute(
-            text("""SELECT d.patient_id::text, d.icd10_desc as diagnosis_name
-               FROM diagnoses d WHERE d.icd10_desc IS NOT NULL LIMIT 10000""")
+            text(
+                """SELECT d.patient_id::text, d.icd10_desc as diagnosis_name
+               FROM diagnoses d WHERE d.icd10_desc IS NOT NULL LIMIT 10000"""
+            )
         )
         diagnoses = rows.mappings().all()
         seen_diseases: Dict[str, bool] = {}
@@ -208,8 +210,10 @@ class KGIngestionService:
 
     async def _sync_medications(self, db: AsyncSession):
         rows = await db.execute(
-            text("""SELECT m.patient_id::text, m.drug_name as medication_name
-               FROM medications m WHERE m.drug_name IS NOT NULL LIMIT 10000""")
+            text(
+                """SELECT m.patient_id::text, m.drug_name as medication_name
+               FROM medications m WHERE m.drug_name IS NOT NULL LIMIT 10000"""
+            )
         )
         medications = rows.mappings().all()
         seen_medications: Dict[str, bool] = {}
@@ -261,8 +265,12 @@ class KGIngestionService:
         log.info("Synced patient symptom relationships via disease graph")
 
     async def _sync_lab_tests(self, db: AsyncSession):
-        rows = await db.execute(text("""SELECT lr.patient_id::text, lr.test_name
-               FROM lab_results lr LIMIT 10000"""))
+        rows = await db.execute(
+            text(
+                """SELECT lr.patient_id::text, lr.test_name
+               FROM lab_results lr LIMIT 10000"""
+            )
+        )
         lab_tests = rows.mappings().all()
 
         for row in lab_tests:

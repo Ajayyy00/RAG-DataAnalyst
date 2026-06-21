@@ -5,6 +5,7 @@ import { useAuthStore } from '../../store/authStore'
 import { useSessionStore } from '../../store/sessionStore'
 import { useChatStore } from '../../store/chatStore'
 import { sessionsApi } from '../../api/sessions'
+import { authApi } from '../../api/auth'
 import toast from 'react-hot-toast'
 
 const NAV = [
@@ -19,12 +20,11 @@ export default function Sidebar() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const logout = useAuthStore((s) => s.logout)
-  const token  = useAuthStore((s) => s.token)
   const user   = useAuthStore((s) => s.user)
   const { activeSessionId, setActiveSession, addSession, removeSession } = useSessionStore()
   const storeSessions = useSessionStore((s) => s.sessions)
   const clearMessages = useChatStore((s) => s.clearMessages)
-  const isDemo = token === 'demo-jwt-token-not-real'
+  const isDemo = user?.id === 'demo-user-001'
 
   const { data: apiData } = useQuery({
     queryKey: ['sessions'],
@@ -145,7 +145,11 @@ export default function Sidebar() {
           </div>
         )}
         <button
-          onClick={() => { logout(); navigate('/login') }}
+          onClick={async () => {
+            try { if (!isDemo) await authApi.logout() } catch (_) { /* ignore */ }
+            logout()
+            navigate('/login')
+          }}
           className="nav-item"
           style={{ width: '100%', justifyContent: 'flex-start', border: 'none', background: 'none' }}
         >

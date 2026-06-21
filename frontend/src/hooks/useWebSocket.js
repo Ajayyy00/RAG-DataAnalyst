@@ -1,15 +1,15 @@
 import { useEffect, useRef, useCallback } from 'react'
-import { useAuthStore } from '../store/authStore'
 import { useChatStore } from '../store/chatStore'
 
 export function useWebSocket(sessionId) {
   const ws = useRef(null)
-  const token = useAuthStore((s) => s.token)
   const { setStreaming, addAssistantMessage } = useChatStore()
 
   const connect = useCallback(() => {
-    if (!sessionId || !token) return
-    const url = `ws://localhost:8001/api/v1/stream/${sessionId}?token=${token}`
+    if (!sessionId) return
+    // Auth travels via the HttpOnly cookie on the WS handshake — no token in the URL.
+    const wsBase = (import.meta.env.VITE_WS_URL || 'ws://localhost:8001')
+    const url = `${wsBase}/api/v1/stream/${sessionId}`
     ws.current = new WebSocket(url)
 
     const result = {}
@@ -63,7 +63,7 @@ export function useWebSocket(sessionId) {
     }
 
     ws.current.onclose = () => setStreaming(false)
-  }, [sessionId, token])
+  }, [sessionId])
 
   const disconnect = useCallback(() => {
     ws.current?.close()

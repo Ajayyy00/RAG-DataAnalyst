@@ -115,8 +115,11 @@ class AgenticSQLService:
                 if hasattr(role, "value"):
                     role = role.value
 
-                # Fetch schema from RAG based on the question
-                schema_context = self.rag_service.retrieve_schema_context(
+                # Fetch schema from RAG based on the question.
+                # NOTE: retrieve_schema_context is async — it MUST be awaited,
+                # otherwise a coroutine object is fed into the prompt and the
+                # model receives no schema at all.
+                schema_context = await self.rag_service.retrieve_schema_context(
                     state["question"], top_k=5, user_role=role
                 )
                 return {"schema_context": schema_context}
@@ -232,11 +235,26 @@ class AgenticSQLService:
             # Step 3: Rewrite and suggest indexes
             result = await self.optimization_engine.optimize(sql_draft, plan_json)
             if isinstance(result, dict):
-                final_sql = result.get("optimized_sql", sql_draft)
+                optimized_sql = result.get("optimized_sql", sql_draft)
                 index_suggestions = result.get("index_suggestions", [])
             else:
-                final_sql = getattr(result, "optimized_sql", sql_draft)
+                optimized_sql = getattr(result, "optimized_sql", sql_draft)
                 index_suggestions = getattr(result, "index_suggestions", [])
+
+            # CRITICAL: the optimizer is an LLM and can introduce unsafe SQL
+            # (unauthorized tables, removed LIMIT, etc.). Re-validate its output
+            # and fall back to the already-validated draft if the rewrite fails.
+            opt_validation = self.validation_service.validate(optimized_sql)
+            if opt_validation.is_valid:
+                final_sql = opt_validation.normalized_sql
+            else:
+                log.warning(
+                    "Optimizer rewrite failed validation — using validated draft",
+                    violations=opt_validation.violations,
+                )
+                AGENT_ERRORS.labels(error_type="optimizer_validation").inc()
+                final_sql = sql_draft
+                index_suggestions = []
 
             return {
                 "final_sql": final_sql,
@@ -270,13 +288,11 @@ class AgenticSQLService:
             # LangGraph's ainvoke executes the compiled StateGraph
             result = await self.graph.ainvoke(initial_state)
 
-            # Return final SQL if present, otherwise fallback to the last valid draft or empty string
+            # Only `final_sql` (set by the optimization_agent on the validated
+            # path) is safe to return. Never return a raw draft.
             if result.get("final_sql"):
                 return result["final_sql"]
-            elif result.get("sql_draft") and not result.get("validation_errors"):
-                return result["sql_draft"]
-            else:
-                raise LLMServiceError("Failed to generate a valid SQL query.")
+            raise LLMServiceError("Failed to generate a valid SQL query.")
 
         except Exception as e:
             AGENT_ERRORS.labels(error_type="graph_execution").inc()
@@ -308,7 +324,11 @@ class AgenticSQLService:
                     }
                     last_state.update(state_update)
 
-            final_sql = last_state.get("final_sql") or last_state.get("sql_draft")
+            # SECURITY: only emit `final_sql`, which is set exclusively by the
+            # optimization_agent and is therefore guaranteed to have passed
+            # validation. NEVER fall back to `sql_draft` — after 3 failed
+            # validation retries the draft is invalid/unsafe and must not run.
+            final_sql = last_state.get("final_sql")
             if final_sql:
                 yield {
                     "type": "sql",
@@ -319,7 +339,7 @@ class AgenticSQLService:
             else:
                 yield {
                     "type": "error",
-                    "message": "Failed to generate a valid SQL query.",
+                    "message": "Could not generate a SQL query that passed safety validation.",
                 }
 
         except Exception as e:

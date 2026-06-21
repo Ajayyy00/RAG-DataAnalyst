@@ -26,26 +26,14 @@ log = structlog.get_logger(__name__)
 settings = get_settings()
 
 
-# ── Allowed tables (must match sql_validation_service.py allowlist) ────────────
-ALLOWED_TABLES: list[str] = [
-    "patients",
-    "encounters",
-    "diagnoses",
-    "procedures",
-    "medications",
-    "lab_results",
-    "vital_signs",
-    "claims",
-    "readmissions",
-    "providers",
-    "departments",
-    "facilities",
-    "insurance_plans",
-    "allergies",
-    "immunizations",
-    "care_plans",
-    "observations",
-]
+# ── Allowed tables ─────────────────────────────────────────────────────────────
+# Single source of truth: import the validator's canonical allowlist so the
+# prompt and the safety gate can never disagree (previously they listed
+# different / non-existent tables, causing valid queries to be rejected and
+# copilot_* tables to be exposed).
+from app.services.sql_validation_service import ALLOWED_TABLES as _ALLOWED_TABLES
+
+ALLOWED_TABLES: list[str] = sorted(_ALLOWED_TABLES)
 
 
 # ── System prompt ──────────────────────────────────────────────────────────────
@@ -283,6 +271,7 @@ class TextToSQLService:
 
         # 1. Check Redis Cache using SemanticCache (cosine similarity)
         from app.services.semantic_cache import SemanticCache
+
         sem_cache = SemanticCache(self.redis)
         if self.redis:
             cached_sql = await sem_cache.get(question)

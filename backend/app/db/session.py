@@ -36,6 +36,29 @@ AsyncSessionLocal = async_sessionmaker(
     autoflush=False,
 )
 
+# ── Read-only Engine ──────────────────────────────────────────────────────────
+# Analyst-generated SQL is executed here, ideally under a least-privilege role
+# (configure READONLY_POSTGRES_USER/PASSWORD). Using a *separate* engine also
+# guarantees each generated query runs in its own fresh transaction, so
+# `SET TRANSACTION READ ONLY` is always issued before any statement.
+readonly_engine = create_async_engine(
+    settings.readonly_database_url,
+    echo=False,
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
+    pool_timeout=30,
+    pool_recycle=1800,
+)
+
+ReadOnlySessionLocal = async_sessionmaker(
+    bind=readonly_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False,
+)
+
 
 async def create_tables() -> None:
     """Create all tables (used for testing / first-run without Alembic)."""

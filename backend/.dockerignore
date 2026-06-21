@@ -12,3 +12,17 @@ venv.bak/
 .pytest_cache/
 *.log
 .DS_Store
+
+# ── Secrets — NEVER bake into image layers ──
+.env
+.env.*
+!.env.example
+
+# ── Tests & scratch / one-off scripts ──
+tests/
+test_*.py
+diagnose_imports.py
+run_sync.py
+run_uvicorn_flushed.py
+reset_password.py
+check_users.py

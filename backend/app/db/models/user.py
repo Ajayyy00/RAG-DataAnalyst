@@ -9,6 +9,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.types import EncryptedString
 
 if TYPE_CHECKING:
     from app.db.models.copilot import CopilotSession
@@ -39,8 +40,10 @@ class User(Base):
         String(100), unique=True, nullable=False, index=True
     )
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
-    first_name: Mapped[str | None] = mapped_column(String(100))
-    last_name: Mapped[str | None] = mapped_column(String(100))
+    # PHI encrypted at rest (Fernet). Stored as TEXT ciphertext; transparently
+    # decrypted on ORM read. Never queried by the analytics SQL path.
+    first_name: Mapped[str | None] = mapped_column(EncryptedString)
+    last_name: Mapped[str | None] = mapped_column(EncryptedString)
 
     role: Mapped[UserRole] = mapped_column(
         String(20), default=UserRole.ANALYST, nullable=False

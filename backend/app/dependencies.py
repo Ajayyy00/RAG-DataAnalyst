@@ -1,10 +1,10 @@
 """FastAPI dependency injection: DB session, current user, Redis client."""
 
-from typing import Annotated, AsyncGenerator
+from typing import Annotated, AsyncGenerator, Optional
 
 import redis.asyncio as aioredis
 import structlog
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +16,8 @@ from app.db.session import AsyncSessionLocal
 
 logger = structlog.get_logger(__name__)
 settings = get_settings()
-security = HTTPBearer(auto_error=True)
+# auto_error=False so we can ALSO accept the token from the HttpOnly cookie.
+security = HTTPBearer(auto_error=False)
 
 
 # ── Database ──────────────────────────────────────────────────────────────────
@@ -54,12 +55,32 @@ async def get_redis() -> AsyncGenerator[aioredis.Redis, None]:
 # ── Authentication ────────────────────────────────────────────────────────────
 
 
+DENYLIST_PREFIX = "jwt:denylist:"
+
+
+def _extract_token(
+    request: Request, credentials: Optional[HTTPAuthorizationCredentials]
+) -> Optional[str]:
+    """Prefer the Authorization: Bearer header; fall back to the HttpOnly cookie."""
+    if credentials and credentials.credentials:
+        return credentials.credentials
+    return request.cookies.get(settings.cookie_access_name)
+
+
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(get_redis),
 ) -> User:
-    """Validate JWT bearer token and return the authenticated user."""
-    token = credentials.credentials
+    """Validate JWT (cookie or bearer) and return the authenticated user."""
+    token = _extract_token(request, credentials)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     payload = verify_token(token)
 
     if not payload or payload.get("type") != "access":
@@ -68,6 +89,24 @@ async def get_current_user(
             detail="Invalid or expired access token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Reject tokens that have been explicitly revoked (logout / forced sign-out)
+    jti = payload.get("jti")
+    if jti:
+        try:
+            if await redis.exists(f"{DENYLIST_PREFIX}{jti}"):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has been revoked",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            # Fail-open on Redis outage would be unsafe for revocation, but
+            # fail-closed would take down all auth if Redis blips. We log and
+            # allow, matching the app's "Redis is a cache" posture.
+            logger.warning("Denylist check skipped — Redis unavailable")
 
     user_id: str | None = payload.get("sub")
     if not user_id:

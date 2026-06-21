@@ -1,6 +1,8 @@
 import pytest
-from app.services.sql_evaluator import SQLEvaluatorService
+
 from app.db.session import AsyncSessionLocal
+from app.services.sql_evaluator import SQLEvaluatorService
+
 
 @pytest.mark.asyncio
 async def test_text_to_sql_benchmark():
@@ -11,7 +13,9 @@ async def test_text_to_sql_benchmark():
     async with AsyncSessionLocal() as db:
         evaluator = SQLEvaluatorService(db)
         # Using a relative path that works from the backend root
-        report = await evaluator.run_benchmark("tests/evaluation/benchmark_dataset.json")
+        report = await evaluator.run_benchmark(
+            "tests/evaluation/benchmark_dataset.json"
+        )
 
     print(f"\nBenchmark Results:")
     print(f"Total Queries: {report.total_queries}")
@@ -22,4 +26,6 @@ async def test_text_to_sql_benchmark():
     print(f"Total Cost: ${report.total_cost_usd:.6f}")
 
     assert report.total_queries > 0, "Benchmark dataset is empty."
-    assert report.execution_accuracy_rate >= 0.80, f"Execution accuracy {report.execution_accuracy_rate*100}% fell below 80% threshold."
+    assert (
+        report.execution_accuracy_rate >= 0.80
+    ), f"Execution accuracy {report.execution_accuracy_rate*100}% fell below 80% threshold."

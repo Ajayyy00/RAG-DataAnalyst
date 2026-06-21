@@ -1,82 +1,152 @@
-# Healthcare Copilot
+# 🏥 Healthcare Copilot — RAG Data Analyst
 
-Healthcare Copilot is an enterprise-grade analytical engine designed to translate natural language inquiries into secure, executable SQL queries against a structured healthcare database. The system utilizes a multi-agent orchestration layer, retrieval-augmented generation (RAG), and a supplemental knowledge graph to assist analysts in extracting clinical data securely while maintaining strict compliance with healthcare data regulations.
+> An AI copilot that turns natural-language clinical questions into **safe,
+> validated, read-only SQL**, executes it against a healthcare data warehouse,
+> and returns charts, dashboards, and narrative insights — with HIPAA-minded
+> security at every layer.
 
-## 1. System Architecture
+<p align="left">
+<img alt="Python" src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white">
+<img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-async-009688?logo=fastapi&logoColor=white">
+<img alt="React" src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black">
+<img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-16%20%2B%20RLS-4169E1?logo=postgresql&logoColor=white">
+<img alt="LangGraph" src="https://img.shields.io/badge/LangGraph-agentic-1C3C3C">
+<img alt="ChromaDB" src="https://img.shields.io/badge/ChromaDB-RAG-FF6B6B">
+<img alt="Tests" src="https://img.shields.io/badge/tests-74%20passing-success">
+</p>
 
-The application is distributed across a React-based frontend and a Python FastAPI backend, orchestrated via Docker.
+---
 
-### 1.1 Infrastructure Components
-- **Application Server**: FastAPI running via Uvicorn.
-- **Relational Database**: PostgreSQL 16 (stores structured OLAP clinical data).
-- **Vector Database**: ChromaDB (stores embeddings of database schema definitions for retrieval).
-- **Knowledge Graph**: Neo4j (stores explicit relationships between clinical entities for graph traversal).
-- **In-Memory Cache**: Redis 7 (manages session state, conversation history, and rate limiting).
-- **Observability Stack**: Prometheus (metrics scraping), Jaeger (distributed tracing), and Grafana (visualization).
+## ✨ What it does
 
-### 1.2 Pipeline Workflow
+Ask *"What's the 30-day readmission rate by department for the last 6 months?"* and the system:
+
+1. Classifies intent (chit-chat vs. clinical query).
+2. Retrieves the relevant schema via **RAG** (HyDE → embeddings → ChromaDB).
+3. Generates PostgreSQL with an LLM — directly or via a **LangGraph multi-agent**
+   pipeline (plan → generate → validate → optimize).
+4. **Validates** the SQL (sqlglot AST: allow-list, injection guard, complexity, LIMIT).
+5. Executes it through a **least-privilege, read-only DB role** under **Row-Level Security**.
+6. **Redacts PHI** by role, recommends a chart, and writes an AI insight summary.
+7. Streams progress over **Server-Sent Events / WebSockets**.
+
+## 🔐 Security highlights (why this isn't a toy)
+
+- **Read-only execution isolation** — AI-generated SQL runs as `hc_readonly`
+  (SELECT-only, RLS-enforced), never the app's write role.
+- **PostgreSQL Row-Level Security** with role-based policies (doctor / nurse /
+  analyst / admin) and a trusted-backend bypass for migrations/seeding.
+- **SQL safety engine** — AST allow-list, stacked-statement / tautology / system-catalog
+  blocking, complexity scoring, mandatory `LIMIT`, optimizer-output re-validation.
+- **Auth** — PyJWT, **HttpOnly + SameSite + Secure cookies** (no tokens in JS),
+  refresh-token rotation, Redis revocation denylist, per-IP rate limiting.
+- **PHI encryption at rest** — Fernet (with key rotation) via a transparent
+  SQLAlchemy type; **PHI redaction** on every egress path.
+- **Defense in depth** — global security headers (CSP/HSTS/…), prompt-injection
+  heuristics, audit logging, and secret scanning in CI.
+
+See **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** for full diagrams and
+**[docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md)** for the security scorecard.
+
+## 🧱 System architecture
+
 ```mermaid
-graph TD;
-    User[User Input] --> Security[AI Security Layer];
-    Security -- Validated --> RAG[ChromaDB Schema Retrieval];
-    RAG --> Agentic[LangGraph Agentic Pipeline];
-    Agentic --> SQL_Validation[AST SQL Validator];
-    SQL_Validation -- Safe --> Postgres[PostgreSQL Execution];
-    Postgres --> Egress_Security[PHI Redaction Filter];
-    Egress_Security --> Insights[Insight & Chart Generator];
-    Insights --> User;
+flowchart LR
+    U["Analyst / Clinician"] -->|HTTPS| EDGE["nginx edge<br/>TLS - SPA - reverse proxy"]
+    EDGE -->|static| SPA["React SPA<br/>Vite - Zustand"]
+    EDGE -->|/api /ws| API["FastAPI backend<br/>uvicorn workers"]
+
+    subgraph CORE["Backend services"]
+        API --> AUTH["Auth - JWT cookies - RBAC"]
+        API --> PIPE["NL to SQL pipeline"]
+        API --> AGENT["LangGraph agent"]
+        API --> DASH["Dashboard engine"]
+    end
+
+    PIPE --> RAG["RAG service"]
+    RAG --> EMB["Embeddings<br/>sentence-transformers"]
+    RAG --> CHROMA[("ChromaDB<br/>schema vectors")]
+    PIPE --> LLM["LLM (Groq / OpenAI-compatible)"]
+    PIPE --> VAL["SQL validation engine<br/>sqlglot AST"]
+    VAL --> ROEXEC["Read-only executor<br/>hc_readonly + RLS"]
+
+    AUTH --> REDIS[("Redis<br/>sessions - denylist - cache")]
+    ROEXEC --> PG[("PostgreSQL 16<br/>RLS - PHI encryption")]
+    API --> NEO[("Neo4j<br/>knowledge graph")]
+    API --> KAFKA[["Kafka<br/>clinical events"]]
+
+    API -.metrics.-> PROM["Prometheus + Grafana"]
+    API -.traces.-> JAEGER["Jaeger / OpenTelemetry"]
 ```
 
-## 2. Core Functional Modules
+## 🛠️ Tech stack
 
-### 2.1 Natural Language to SQL Processing (RAG)
-The translation of natural language to SQL relies on Retrieval-Augmented Generation. Upon receiving a query, the system vectorizes the input using the `sentence-transformers/all-MiniLM-L6-v2` embedding model. It queries ChromaDB to retrieve the most semantically relevant database schemas and Table Data Definition Language (DDL) statements. This context is injected into the prompt of the Large Language Model to ensure syntactical and structural accuracy of the generated SQL.
+| Layer | Technology |
+|---|---|
+| Frontend | React 18, Vite, Zustand, React Query, Recharts, nginx |
+| Backend | FastAPI, async SQLAlchemy 2, Pydantic v2, uvicorn |
+| AI / RAG | LangGraph, LangChain, sentence-transformers, ChromaDB, HyDE |
+| Data | PostgreSQL 16 (RLS), Redis, Neo4j, Kafka |
+| Security | PyJWT, passlib/bcrypt, Fernet (cryptography), sqlglot, detect-secrets |
+| Observability | Prometheus, Grafana, Jaeger, OpenTelemetry, structlog |
+| Infra / CI | Docker, docker-compose, Alembic, GitHub Actions, Locust |
 
-### 2.2 Agentic Workflow Execution
-Complex queries bypass the standard pipeline and are routed to a LangGraph-based multi-agent architecture. This system models the workflow as a state graph with the following sequential nodes:
-1. **Schema Extraction**: Identifies required tables.
-2. **Query Planning**: Outlines the logical steps required to answer the prompt.
-3. **SQL Generation**: Drafts the initial SQL query.
-4. **Validation**: Ensures the query is syntactically valid and executes without failure.
-5. **Optimization**: Executes a PostgreSQL `EXPLAIN (FORMAT JSON)` on the draft query. An optimization agent analyzes the query cost, sequential scans, and execution plan to rewrite the query or recommend optimal `CREATE INDEX` commands.
+## 📁 Repository layout
 
-### 2.3 AI Security and Compliance Layer (HIPAA Enforcement)
-The system enforces strict security boundaries designed for protected health environments:
+```
+healthcare-copilot/
+├── backend/                 # FastAPI app, services, models, migrations, tests
+│   ├── app/
+│   │   ├── api/             # REST + WebSocket routes
+│   │   ├── services/        # RAG, text-to-SQL, agentic, validation, dashboards…
+│   │   ├── core/            # security, encryption, cookies, rate-limit, telemetry
+│   │   ├── db/              # models, sessions (primary + read-only), RLS startup checks
+│   │   └── middleware/      # security headers, audit logging
+│   ├── alembic/             # schema + RLS + index + encryption migrations
+│   ├── loadtest/            # Locust suite (100/500/1000 users)
+│   ├── scripts/             # backup, SQL role provisioning, entrypoint
+│   └── tests/               # unit · security (red-team) · integration (RLS)
+├── frontend/                # React SPA + production nginx image
+├── deploy/nginx/            # self-managed TLS reverse-proxy config
+├── docs/                    # architecture, deployment, DR, secret rotation, readiness
+└── docker-compose*.yml      # dev + production compositions
+```
 
-- **Ingress Filtering (Prompt Injection)**: Before processing, heuristic patterns scan user inputs to detect jailbreak attempts, system prompt overrides, or destructive commands (e.g., `drop table`).
-- **Abstract Syntax Tree (AST) Guardrails**: Prior to database execution, the generated SQL is parsed using `sqlglot`. The validation engine actively rejects Data Manipulation Language (DML) and Data Definition Language (DDL). It strictly enforces `SELECT` operations, blocks system catalog access (`pg_catalog`), and checks against tautology-based SQL injections (e.g., `1=1`).
-- **Egress Filtering (PHI Redaction)**: Database result sets pass through a redaction engine before reaching the client. Based on Role-Based Access Control (RBAC), if the requesting user possesses an `analyst` role, all fields containing Protected Health Information (PHI)—such as Medical Record Numbers (MRN), Social Security Numbers (SSN), names, and contact details—are automatically masked.
-- **Audit Logging**: All queries, validation violations, and security events are logged with structured metadata, tagged explicitly for HIPAA audit aggregation.
+## 🚀 Quick start (local dev)
 
-### 2.4 Data Visualization and Insights Engine
-Following query execution, the structured result set is evaluated by a Chart Advisor service. The service inspects data types and column counts to heuristically determine the optimal visualization format (e.g., assigning continuous time-series data to line charts, categorical aggregations to bar or pie charts). Concurrently, an Insight Engine analyzes the statistical variance within the data to return a text-based analytical summary.
+```bash
+# Backend
+cd backend
+cp .env.example .env                 # CHROMADB_MODE=ephemeral works with no Docker
+python -m venv .venv && . .venv/Scripts/activate   # (Linux/macOS: source .venv/bin/activate)
+pip install -r requirements.txt
+alembic upgrade head
+python -m app.scripts.seed_db        # demo users + synthetic clinical data
+uvicorn app.main:app --reload --port 8001
 
-### 2.5 Knowledge Graph Integration
-To supplement relational queries, the system synchronizes core clinical entities (Patients, Providers, Encounters, Diagnoses) into a Neo4j Knowledge Graph. This allows the system to perform complex relationship traversals, such as identifying shared patient encounters among networks of providers, which are computationally expensive via standard relational `JOIN` operations.
+# Frontend
+cd ../frontend && npm install && npm run dev   # http://localhost:5173
+```
 
-## 3. Database Schema Overview
+Production (single VM): `docker compose -f docker-compose.prod.yml up -d --build`
+— see **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** (AWS, Azure, sizing, costs, scaling).
 
-The underlying PostgreSQL database represents a standard healthcare OLAP schema, utilizing UUID primary keys and extensive foreign key relationships. Primary domains include:
-- **Reference Data**: `Facilities`, `Departments`, `Providers`.
-- **Core Clinical Data**: `Patients`, `Encounters`.
-- **Clinical Events**: `Diagnoses`, `Procedures`, `Medications`, `Lab_Results`, `Vital_Signs`.
-- **Financial Data**: `Claims`.
+## ✅ Quality & testing
 
-## 4. Local Deployment Instructions
+```bash
+pytest tests/unit tests/security        # 74 unit + red-team tests
+pytest tests/integration                # RLS + read-only isolation (needs Postgres)
+black --check app && bandit -r app -ll  # format + SAST (0 medium/high)
+```
+CI (GitHub Actions) runs: secret scanning, lint/format, Bandit SAST, dependency
+audit, unit + security tests, and a Postgres-backed RLS integration job.
 
-The application requires Docker and Docker Compose.
+## 📚 Documentation
+- [Architecture & flows (10 Mermaid diagrams)](docs/ARCHITECTURE.md)
+- [Deployment guide (AWS / Azure / costs / scaling)](docs/DEPLOYMENT.md)
+- [Production readiness report](docs/PRODUCTION_READINESS.md)
+- [Disaster recovery](docs/DISASTER_RECOVERY.md)
+- [Secret rotation runbook](docs/SECRET_ROTATION.md)
 
-1. Clone the repository and navigate to the project root.
-2. Initialize the environment:
-   ```bash
-   docker compose up --build -d
-   ```
-3. Wait for the containers to reach a healthy state. Verify logs using:
-   ```bash
-   docker compose logs -f backend
-   ```
-4. Access the respective services via their exposed ports:
-   - Client Interface (Frontend): `http://localhost:5173`
-   - API Documentation (Swagger): `http://localhost:8001/docs`
-   - Neo4j Graph Browser: `http://localhost:7474`
-   - Observability Dashboard: `http://localhost:3000`
+> ⚕️ Clinical data in this repo is **synthetic**. Deploy on HIPAA-eligible infra
+> with a signed BAA before handling real PHI.

@@ -1,10 +1,11 @@
 """JWT token handling and password hashing utilities."""
 
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
+import jwt  # PyJWT
 import structlog
-from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from app.config import get_settings
@@ -40,7 +41,8 @@ def create_access_token(
     expire = datetime.now(timezone.utc) + (
         expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
     )
-    to_encode.update({"exp": expire, "type": "access"})
+    # jti = unique token id, enables server-side revocation (logout / denylist)
+    to_encode.update({"exp": expire, "type": "access", "jti": str(uuid.uuid4())})
     return jwt.encode(
         to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm
     )
@@ -52,7 +54,7 @@ def create_refresh_token(data: Dict[str, Any]) -> str:
     expire = datetime.now(timezone.utc) + timedelta(
         days=settings.refresh_token_expire_days
     )
-    to_encode.update({"exp": expire, "type": "refresh"})
+    to_encode.update({"exp": expire, "type": "refresh", "jti": str(uuid.uuid4())})
     return jwt.encode(
         to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm
     )
@@ -60,14 +62,17 @@ def create_refresh_token(data: Dict[str, Any]) -> str:
 
 def verify_token(token: str) -> Optional[Dict[str, Any]]:
     """Decode and verify a JWT token. Returns payload or None on failure."""
+    if not token:
+        return None
     try:
         payload = jwt.decode(
             token,
             settings.jwt_secret_key,
             algorithms=[settings.jwt_algorithm],
+            options={"require": ["exp", "type"]},
         )
         return payload
-    except JWTError as exc:
+    except jwt.PyJWTError as exc:
         logger.warning("Token verification failed", error=str(exc))
         return None
 

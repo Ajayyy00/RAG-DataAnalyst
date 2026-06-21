@@ -33,18 +33,30 @@ PHI_PATTERNS = {
     "mrn": re.compile(r"\bMRN-?\d+\b", re.IGNORECASE),
 }
 
-# Fields that likely contain PHI
-PHI_FIELDS = {
+# Substring tokens — any result column whose (lower-cased) name CONTAINS one of
+# these is treated as PHI. Substring matching catches aliases such as
+# "patient_first_name" or "pt_mrn" that exact-match would miss. HIPAA Safe
+# Harbor quasi-identifiers (zip, dates, race/ethnicity) are included.
+PHI_FIELD_TOKENS = {
     "ssn",
     "social_security",
     "first_name",
     "last_name",
+    "full_name",
+    "patient_name",
     "mrn",
+    "medical_record",
     "phone",
     "email",
     "address",
     "dob",
     "date_of_birth",
+    "birth_date",
+    "zip",
+    "postal",
+    "race",
+    "ethnicity",
+    "npi",
 }
 
 
@@ -91,8 +103,9 @@ class AISecurityLayer:
                     redacted_row[key] = value
                     continue
 
-                # Check column name heuristics
-                if key.lower() in PHI_FIELDS:
+                # Check column name heuristics (substring match catches aliases)
+                key_lower = key.lower()
+                if any(token in key_lower for token in PHI_FIELD_TOKENS):
                     redacted_row[key] = "***REDACTED***"
                     redaction_count += 1
                     continue

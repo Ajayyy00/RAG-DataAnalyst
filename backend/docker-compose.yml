@@ -67,6 +67,9 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD:-changeme}@redis:6379
       CHROMADB_HOST: chromadb
       CHROMADB_PORT: 8000
+      # Use the shared ChromaDB service (not per-worker in-memory ephemeral),
+      # so all 4 uvicorn workers share one consistent schema index.
+      CHROMADB_MODE: http
       NEO4J_URI: bolt://neo4j:7687
     ports:
       - "8001:8001"
@@ -101,7 +104,7 @@ services:
     volumes:
       - ./infra/grafana/provisioning:/etc/grafana/provisioning
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
     depends_on:
       - prometheus
       - jaeger

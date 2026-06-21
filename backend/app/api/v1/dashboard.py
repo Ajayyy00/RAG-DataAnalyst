@@ -33,6 +33,7 @@ async def generate_dashboard(
         request=request.request,
         db=db,
         redis=redis,
+        user_role=getattr(current_user.role, "value", current_user.role),
     )
     logger.info(
         "Dashboard API response",

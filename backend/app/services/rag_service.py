@@ -321,6 +321,7 @@ class RAGService:
         """
         try:
             import httpx
+
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await client.post(
                     f"{settings.llm_base_url}/chat/completions",
@@ -337,20 +338,22 @@ class RAGService:
                                     "You are a helpful assistant. Convert the user's healthcare data question "
                                     "into a hypothetical PostgreSQL query. Do not validate the schema. "
                                     "Output ONLY the SQL query. No markdown, no notes, no commentary."
-                                )
+                                ),
                             },
-                            {"role": "user", "content": question}
+                            {"role": "user", "content": question},
                         ],
                         "max_tokens": 128,
                         "temperature": 0.0,
-                    }
+                    },
                 )
                 response.raise_for_status()
                 sql = response.json()["choices"][0]["message"]["content"].strip()
                 log.info("HyDE generated hypothetical SQL", hypothetical_sql=sql[:100])
                 return sql
         except Exception as exc:
-            log.warning("HyDE generation failed, falling back to raw question", error=str(exc))
+            log.warning(
+                "HyDE generation failed, falling back to raw question", error=str(exc)
+            )
             return question
 
     async def retrieve(

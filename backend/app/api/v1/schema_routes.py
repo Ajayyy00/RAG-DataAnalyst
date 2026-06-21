@@ -8,6 +8,7 @@ from sqlalchemy import text
 
 from app.dependencies import CurrentAdmin, CurrentUser, DbSession
 from app.services.rag_service import RAGService
+from app.services.sql_validation_service import ALLOWED_TABLES
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
@@ -25,7 +26,8 @@ async def list_tables(current_user: CurrentUser, db: DbSession) -> List[str]:
             "WHERE table_schema = 'public' ORDER BY table_name"
         )
     )
-    return [row[0] for row in result.fetchall()]
+    # Only expose the clinical allowlist — never leak users/audit_logs/copilot_*.
+    return [row[0] for row in result.fetchall() if row[0] in ALLOWED_TABLES]
 
 
 @router.get(
@@ -38,6 +40,13 @@ async def get_table_columns(
     current_user: CurrentUser,
     db: DbSession,
 ) -> List[Dict[str, Any]]:
+    if table_name not in ALLOWED_TABLES:
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Table '{table_name}' is not available.",
+        )
     result = await db.execute(
         text(
             "SELECT column_name, data_type, is_nullable, column_default "

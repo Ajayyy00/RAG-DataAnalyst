@@ -1,0 +1,42 @@
+# Pre-commit hooks for the Healthcare Copilot monorepo.
+#   Install once:   pip install pre-commit && pre-commit install
+#   Run on all:     pre-commit run --all-files
+#
+# Secret scanning is mandatory: detect-secrets blocks commits introducing new
+# credentials. Update the baseline only after auditing:
+#   detect-secrets scan --baseline .secrets.baseline
+
+exclude: '^(.*/\.venv/|.*/node_modules/|.*/package-lock\.json|.*\.log)$'
+
+repos:
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: '(^|/)\.env$|package-lock\.json'
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=1024']
+      - id: detect-private-key
+      - id: check-merge-conflict
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-json
+
+  - repo: https://github.com/psf/black
+    rev: 24.4.2
+    hooks:
+      - id: black
+        files: ^backend/
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: ['--profile', 'black']
+        files: ^backend/

@@ -2,17 +2,14 @@ import api from './axios'
 
 export const chatApi = {
   query: async (sessionId, question, onProgress) => {
-    const authStorage = localStorage.getItem('hc-auth')
-    const token = authStorage ? JSON.parse(authStorage).state.token : ''
-    
-    // Default to the correct backend host/port
+    // SSE stream via fetch — auth travels in the HttpOnly cookie.
     const apiUrl = '/api/v1'
-    
+
     const res = await fetch(`${apiUrl}/chat/query-agentic`, {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify({ session_id: sessionId, question })
     })

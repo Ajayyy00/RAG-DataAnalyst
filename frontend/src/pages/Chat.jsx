@@ -13,12 +13,12 @@ export default function Chat() {
   const { sessionId } = useParams()
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const token = useAuthStore((s) => s.token)
+  const user = useAuthStore((s) => s.user)
 
   const { addUserMessage, addAssistantMessage, setStreaming, loadMessages } = useChatStore()
   const { activeSessionId, setActiveSession, addSession } = useSessionStore()
 
-  const isDemo = token === 'demo-jwt-token-not-real'
+  const isDemo = user?.id === 'demo-user-001'
 
   // Load session messages from API — disabled in demo mode
   const { data: sessionData } = useQuery({

@@ -46,6 +46,7 @@ from app.services.insights_engine import InsightsEngine
 from app.services.query_execution_service import QueryExecutionService
 from app.services.rag_service import RAGService
 from app.services.schema_extractor import SchemaExtractor
+from app.services.security_layer import AISecurityLayer
 from app.services.sql_validation_service import SQLValidationService
 from app.services.text_to_sql_service import TextToSQLService
 
@@ -73,7 +74,8 @@ GRID_COLS = 6  # total grid columns (CSS grid)
 # Query Planner — LLM decomposes request into 3-5 targeted sub-queries
 # ─────────────────────────────────────────────────────────────────────────────
 
-PLANNER_SYSTEM = textwrap.dedent("""\
+PLANNER_SYSTEM = textwrap.dedent(
+    """\
 You are a healthcare data analyst decomposing a dashboard request into specific
 analytical sub-questions that together provide a comprehensive view of the topic.
 
@@ -92,7 +94,8 @@ Respond ONLY with a valid JSON array, no markdown fences:
   {"title": "<panel title>", "question": "<specific sub-question>", "chart_hint": "<chart type>"},
   ...
 ]
-""")
+"""
+)
 
 
 class QueryPlanner:
@@ -315,13 +318,15 @@ class LayoutEngine:
 # Summary Composer — writes an executive-level summary
 # ─────────────────────────────────────────────────────────────────────────────
 
-SUMMARY_SYSTEM = textwrap.dedent("""\
+SUMMARY_SYSTEM = textwrap.dedent(
+    """\
 You are a senior clinical analyst writing a concise executive summary for a
 healthcare dashboard. Based on the panel descriptions provided, write 2-3 sentences
 that highlight the most important findings, trends, or concerns.
 Be specific, cite numbers where given, and focus on clinical/operational impact.
 Respond with plain text only — no bullet points, no markdown.
-""")
+"""
+)
 
 
 class SummaryComposer:
@@ -373,6 +378,7 @@ async def _execute_panel(
     panel_index: int,
     db,
     redis,
+    user_role: str = "analyst",
 ) -> DashboardPanel:
     """Run a single sub-query through NL→SQL→Chart→Insight pipeline."""
     panel_id = str(uuid.uuid4())
@@ -383,7 +389,11 @@ async def _execute_panel(
     # ── 1. RAG schema retrieval ───────────────────────────────
     try:
         rag = RAGService()
-        retrieved_tables, schema_context = rag.retrieve(question=question, top_k=5)
+        # retrieve() is async — must be awaited (previously a coroutine object
+        # was passed as schema context, leaving the model with no grounding).
+        retrieved_tables, schema_context = await rag.retrieve(
+            question=question, top_k=5
+        )
     except Exception:
         schema_context = ""
 
@@ -421,9 +431,12 @@ async def _execute_panel(
     # ── 4. Query Execution ────────────────────────────────────
     try:
         executor = QueryExecutionService(db)
-        result = await executor.execute(validation.normalized_sql, max_rows=200)
+        result = await executor.execute(
+            validation.normalized_sql, max_rows=200, user_role=user_role
+        )
         columns: List[str] = result["columns"]
-        rows: List[List[Any]] = result["rows"]
+        # ── Security Egress: PHI redaction by role ──
+        rows: List[List[Any]] = AISecurityLayer.redact_phi(result["rows"], user_role)
         row_count: int = result["row_count"]
     except Exception as exc:
         logger.warning("Query execution failed for panel", title=title, error=str(exc))
@@ -504,7 +517,8 @@ def _is_numeric(s: str) -> bool:
 # Filter Planner — LLM determines global filters for the dashboard
 # ─────────────────────────────────────────────────────────────────────────────
 
-FILTER_PLANNER_SYSTEM = textwrap.dedent("""\
+FILTER_PLANNER_SYSTEM = textwrap.dedent(
+    """\
 You are an expert dashboard designer. Given a natural language dashboard request and the generated panels, determine 1-3 global interactive filters that would be useful for the user to drill down into the data.
 
 Rules:
@@ -519,7 +533,8 @@ Respond ONLY with a valid JSON array, no markdown fences:
   {"label": "Date Range", "column_name": "admit_date", "table_name": "encounters", "filter_type": "date_range"},
   {"label": "Department", "column_name": "name", "table_name": "departments", "filter_type": "dropdown"}
 ]
-""")
+"""
+)
 
 
 class FilterPlanner:
@@ -581,11 +596,18 @@ class FilterPlanner:
                                     for t in schema
                                 )
 
-                                if table_valid:
-                                    # Still parameterizing/identifying carefully just in case
+                                # Final guard: table must also be on the clinical
+                                # allowlist before any identifier interpolation.
+                                from app.services.sql_validation_service import (
+                                    ALLOWED_TABLES,
+                                )
+
+                                if table_valid and tab.lower() in ALLOWED_TABLES:
+                                    # col/tab are validated against the live schema
+                                    # AND the allowlist; identifiers cannot be injected.
                                     res = await db.execute(
                                         text(
-                                            f"SELECT DISTINCT {col} FROM {tab} WHERE {col} IS NOT NULL LIMIT 50"
+                                            f"SELECT DISTINCT {col} FROM {tab} WHERE {col} IS NOT NULL LIMIT 50"  # nosec B608
                                         )
                                     )
                                     options = [str(row[0]) for row in res.fetchall()]
@@ -639,6 +661,7 @@ class DashboardGenerationEngine:
         request: str,
         db,
         redis,
+        user_role: str = "analyst",
     ) -> DashboardResponse:
         dashboard_id = str(uuid.uuid4())
         logger.info("Dashboard generation started", request_preview=request[:60])
@@ -658,7 +681,8 @@ class DashboardGenerationEngine:
 
         # ── Step 2: Parallel Panel Execution ─────────────────
         tasks = [
-            _execute_panel(item, i, db, redis) for i, item in enumerate(plan_items)
+            _execute_panel(item, i, db, redis, user_role)
+            for i, item in enumerate(plan_items)
         ]
         panels: List[DashboardPanel] = list(
             await asyncio.gather(*tasks, return_exceptions=False)

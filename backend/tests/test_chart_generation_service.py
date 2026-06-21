@@ -1,6 +1,7 @@
 """Unit tests for ChartGenerationService — no external dependencies."""
 
 import pytest
+
 from app.services.chart_generation_service import ChartGenerationService
 
 
@@ -10,6 +11,7 @@ def advisor():
 
 
 # ── KPI ───────────────────────────────────────────────────────────────────────
+
 
 class TestKPI:
     def test_single_numeric_column_gives_kpi(self, advisor):
@@ -27,6 +29,7 @@ class TestKPI:
 
 
 # ── Line chart ────────────────────────────────────────────────────────────────
+
 
 class TestLineChart:
     def test_temporal_plus_numeric_gives_line(self, advisor):
@@ -59,6 +62,7 @@ class TestLineChart:
 
 # ── Bar chart ─────────────────────────────────────────────────────────────────
 
+
 class TestBarChart:
     def test_many_categories_gives_bar(self, advisor):
         columns = ["department_name", "readmission_rate"]
@@ -85,6 +89,7 @@ class TestBarChart:
 
 # ── Pie chart ─────────────────────────────────────────────────────────────────
 
+
 class TestPieChart:
     def test_few_categories_gives_pie(self, advisor):
         columns = ["insurance_type", "patient_count"]
@@ -107,6 +112,7 @@ class TestPieChart:
 
 # ── Scatter chart ─────────────────────────────────────────────────────────────
 
+
 class TestScatterChart:
     def test_two_numeric_columns_gives_scatter(self, advisor):
         columns = ["age", "length_of_stay"]
@@ -118,6 +124,7 @@ class TestScatterChart:
 
 
 # ── Fallback table ────────────────────────────────────────────────────────────
+
 
 class TestFallback:
     def test_empty_data_gives_table(self, advisor):
@@ -131,12 +138,22 @@ class TestFallback:
 
 # ── Config structure ──────────────────────────────────────────────────────────
 
+
 class TestConfigStructure:
     def test_all_required_keys_present(self, advisor):
         columns = ["dept_name", "visit_count"]
         rows = [[f"Dept {i}", i * 5] for i in range(1, 8)]
         config = advisor.recommend(columns, rows)
-        for key in ("type", "x_key", "y_key", "title", "color", "multi_series", "series_keys", "config"):
+        for key in (
+            "type",
+            "x_key",
+            "y_key",
+            "title",
+            "color",
+            "multi_series",
+            "series_keys",
+            "config",
+        ):
             assert key in config, f"Missing key: {key}"
 
     def test_title_is_human_readable(self, advisor):

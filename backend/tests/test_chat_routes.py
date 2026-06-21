@@ -29,7 +29,8 @@ def analyst_token(analyst):
 
 def make_client(app, analyst, analyst_token):
     """Helper to create an authenticated async client with mocked deps."""
-    from app.dependencies import get_db, get_redis, get_current_user
+    from app.dependencies import get_current_user, get_db, get_redis
+
     mock_db = AsyncMock()
     mock_redis = AsyncMock()
     app.dependency_overrides[get_db] = lambda: mock_db
@@ -44,9 +45,11 @@ def make_client(app, analyst, analyst_token):
 
 # ── /chat/validate — good SQL ─────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_validate_good_sql(analyst, analyst_token):
     from app.main import app
+
     async with make_client(app, analyst, analyst_token) as client:
         response = await client.post(
             "/api/v1/chat/validate",
@@ -63,9 +66,11 @@ async def test_validate_good_sql(analyst, analyst_token):
 
 # ── /chat/validate — bad SQL ──────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_validate_dml_returns_violations(analyst, analyst_token):
     from app.main import app
+
     async with make_client(app, analyst, analyst_token) as client:
         response = await client.post(
             "/api/v1/chat/validate",
@@ -82,6 +87,7 @@ async def test_validate_dml_returns_violations(analyst, analyst_token):
 @pytest.mark.asyncio
 async def test_validate_unauthorized_table(analyst, analyst_token):
     from app.main import app
+
     async with make_client(app, analyst, analyst_token) as client:
         response = await client.post(
             "/api/v1/chat/validate",
@@ -95,10 +101,12 @@ async def test_validate_unauthorized_table(analyst, analyst_token):
 
 # ── /chat/validate — auth guard ───────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_validate_requires_auth():
-    from app.main import app
     from app.dependencies import get_db, get_redis
+    from app.main import app
+
     mock_db = AsyncMock()
     mock_redis = AsyncMock()
     app.dependency_overrides[get_db] = lambda: mock_db
@@ -120,19 +128,27 @@ async def test_validate_requires_auth():
 
 # ── Parametrized SQL black-box tests via HTTP ─────────────────────────────────
 
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("sql,expected_valid", [
-    ("SELECT * FROM patients LIMIT 10;", True),
-    ("SELECT COUNT(*) FROM encounters;", True),
-    ("SELECT p.id, d.icd10_code FROM patients p JOIN diagnoses d ON d.patient_id = p.id LIMIT 20;", True),
-    ("DELETE FROM patients WHERE id='1';", False),
-    ("SELECT * FROM users;", False),
-    ("INSERT INTO patients (id) VALUES ('x');", False),
-    ("UPDATE encounters SET discharge_date = NOW();", False),
-    ("SELECT * FROM patients; DROP TABLE patients;", False),
-])
+@pytest.mark.parametrize(
+    "sql,expected_valid",
+    [
+        ("SELECT * FROM patients LIMIT 10;", True),
+        ("SELECT COUNT(*) FROM encounters;", True),
+        (
+            "SELECT p.id, d.icd10_code FROM patients p JOIN diagnoses d ON d.patient_id = p.id LIMIT 20;",
+            True,
+        ),
+        ("DELETE FROM patients WHERE id='1';", False),
+        ("SELECT * FROM users;", False),
+        ("INSERT INTO patients (id) VALUES ('x');", False),
+        ("UPDATE encounters SET discharge_date = NOW();", False),
+        ("SELECT * FROM patients; DROP TABLE patients;", False),
+    ],
+)
 async def test_validate_parametrized(analyst, analyst_token, sql, expected_valid):
     from app.main import app
+
     async with make_client(app, analyst, analyst_token) as client:
         resp = await client.post("/api/v1/chat/validate", json={"sql": sql})
     app.dependency_overrides.clear()
@@ -143,9 +159,11 @@ async def test_validate_parametrized(analyst, analyst_token, sql, expected_valid
 
 # ── /health endpoint (no auth) ────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_health_endpoint_returns_200():
     from app.main import app
+
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",

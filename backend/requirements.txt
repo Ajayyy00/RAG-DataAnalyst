@@ -14,10 +14,11 @@ pydantic-settings==2.3.4
 email-validator==2.2.0
 
 # ── Authentication ──────────────────────────────────────────
-python-jose[cryptography]==3.3.0
+PyJWT==2.9.0               # replaces unmaintained python-jose (CVE-2024-33663/33664)
+cryptography==42.0.8       # JWT signing + Fernet PHI encryption at rest
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
-python-multipart==0.0.9
+python-multipart==0.0.18   # CVE-2024-53981 (multipart DoS) fixed in 0.0.18
 
 # ── Caching ─────────────────────────────────────────────────
 redis[asyncio]==5.0.7

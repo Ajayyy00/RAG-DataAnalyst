@@ -59,7 +59,8 @@ INSIGHT_MAX_TOKENS = 1200
 INSIGHT_TEMPERATURE = 0.25  # Low temp → consistent, factual clinical output
 
 
-SYSTEM_PROMPT = textwrap.dedent("""\
+SYSTEM_PROMPT = textwrap.dedent(
+    """\
 You are an expert clinical data analyst and healthcare quality improvement specialist.
 Your role is to analyse SQL query results and produce **structured, actionable insights**
 for clinical administrators, data scientists, and hospital leadership.
@@ -90,7 +91,8 @@ You MUST respond with ONLY a valid JSON object matching this exact schema:
 }
 
 Output ONLY the JSON. No markdown fences, no preamble, no trailing text.
-""")
+"""
+)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -267,7 +269,8 @@ class PromptBuilder:
         )
         shown = f"Showing {len(preview_rows)} of {profile.row_count} rows"
 
-        return textwrap.dedent(f"""\
+        return textwrap.dedent(
+            f"""\
             CLINICAL QUESTION:
             {question}
 
@@ -283,7 +286,8 @@ class PromptBuilder:
 
             Analyse the data above and return your JSON insight report.
             Remember: output ONLY valid JSON, no markdown fences.
-        """)
+        """
+        )
 
 
 # ──────────────────────────────────────────────────────────────

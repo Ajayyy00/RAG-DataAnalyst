@@ -40,12 +40,16 @@ class DataQualityService:
 
         # 1. Fetch data
         # We use a simple select * because we are just doing exploratory DQ.
-        # Ensure table_name is safe by basic sanitization (no spaces)
-        if not table_name.isidentifier():
-            raise ValueError(f"Invalid table name: {table_name}")
+        # Identifier hardening: must be a bare identifier AND on the clinical
+        # allowlist (never users/audit_logs/copilot_*). This eliminates the SQL
+        # injection vector — the value is constrained to a fixed, vetted set.
+        from app.services.sql_validation_service import ALLOWED_TABLES
 
-        query = text(f"SELECT * FROM {table_name} LIMIT :limit")
-        result = await self.db.execute(query, {"limit": limit})
+        if not table_name.isidentifier() or table_name.lower() not in ALLOWED_TABLES:
+            raise ValueError(f"Invalid or non-allowlisted table name: {table_name}")
+
+        _sql = f"SELECT * FROM {table_name} LIMIT :limit"  # nosec B608 (allowlisted)
+        result = await self.db.execute(text(_sql), {"limit": limit})
 
         # Convert to list of dicts
         rows = [dict(row._mapping) for row in result.fetchall()]

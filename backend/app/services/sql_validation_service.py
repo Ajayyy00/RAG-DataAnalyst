@@ -44,7 +44,12 @@ class RiskLevel(Enum):
     CRITICAL = auto()
 
 
-# Tables the copilot is permitted to query
+# Tables the copilot is permitted to query.
+# CANONICAL SOURCE OF TRUTH — the SQL generator (text_to_sql_service) imports
+# this exact set so the two layers can never drift apart. Only clinical tables
+# that actually exist in the schema are listed. The copilot/auth/audit tables
+# (copilot_sessions, copilot_messages, users, audit_logs) are deliberately
+# EXCLUDED so an analyst can never read other users' conversations or credentials.
 ALLOWED_TABLES: FrozenSet[str] = frozenset(
     {
         "patients",
@@ -59,8 +64,6 @@ ALLOWED_TABLES: FrozenSet[str] = frozenset(
         "providers",
         "departments",
         "facilities",
-        "copilot_sessions",
-        "copilot_messages",
     }
 )
 
@@ -127,8 +130,22 @@ _BLOCKED_KW_RE: Dict[str, re.Pattern] = {
 # Injection: stacked statements (;-separated)
 _MULTI_STMT_RE = re.compile(r";\s*\S")
 
-# Injection: inline / block comment probes
-_COMMENT_PROBE_RE = re.compile(r"(--|#|/\*|\*/)")
+# Comment + string-literal strippers. We run keyword/tautology/stacked-statement
+# heuristics on a *cleaned* copy of the SQL so that legitimate inline comments
+# (e.g. "-- Type 2 diabetes") and string literals (e.g. ILIKE '%create%') never
+# produce false-positive "injection" verdicts.
+_LINE_COMMENT_RE = re.compile(r"--[^\n]*")
+_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+_STRING_LITERAL_RE = re.compile(r"'(?:''|[^'])*'")
+
+
+def _strip_comments_and_strings(sql: str) -> str:
+    """Remove SQL comments and string-literal contents for safe heuristic scans."""
+    cleaned = _BLOCK_COMMENT_RE.sub(" ", sql)
+    cleaned = _LINE_COMMENT_RE.sub(" ", cleaned)
+    cleaned = _STRING_LITERAL_RE.sub("''", cleaned)
+    return cleaned
+
 
 # Injection: classic tautology patterns
 _TAUTOLOGY_RE = re.compile(
@@ -255,36 +272,32 @@ class InjectionDetector:
     def analyse(self, raw_sql: str) -> List[str]:
         findings: List[str] = []
 
-        # 1. Stacked / multi-statement injection
-        if _MULTI_STMT_RE.search(raw_sql):
+        # Heuristics that must not trip on legitimate comments / string literals
+        # run against a cleaned copy of the SQL.
+        cleaned = _strip_comments_and_strings(raw_sql)
+
+        # 1. Stacked / multi-statement injection (ignores ';' inside strings)
+        if _MULTI_STMT_RE.search(cleaned):
             findings.append(
                 "INJECTION: Multiple statements detected (stacked query attack)"
             )
 
-        # 2. Suspicious comment patterns (indicator of injection attempts)
-        comment_hits = _COMMENT_PROBE_RE.findall(raw_sql)
-        if comment_hits:
-            findings.append(
-                f"INJECTION: Comment tokens found ({', '.join(set(comment_hits))})"
-                " — potential comment-based injection"
-            )
-
-        # 3. Classic tautology patterns
-        if _TAUTOLOGY_RE.search(raw_sql):
+        # 2. Classic tautology patterns (e.g. OR 1=1) outside of string literals
+        if _TAUTOLOGY_RE.search(cleaned):
             findings.append(
                 "INJECTION: Tautology pattern detected (e.g. OR 1=1, 'a'='a')"
             )
 
-        # 4. Null-byte injection
+        # 3. Null-byte injection
         if "\x00" in raw_sql:
             findings.append("INJECTION: Null byte detected")
 
-        # 5. Hex / unicode escape abuse
-        if re.search(r"0x[0-9a-fA-F]{4,}", raw_sql):
+        # 4. Hex / unicode escape abuse (outside string literals)
+        if re.search(r"0x[0-9a-fA-F]{4,}", cleaned):
             findings.append("INJECTION: Suspicious hex literal sequence")
 
-        # 6. Excessive nesting depth (deeply nested subqueries are suspicious)
-        if raw_sql.count("(") > 25:
+        # 5. Excessive nesting depth (deeply nested subqueries are suspicious)
+        if cleaned.count("(") > 25:
             findings.append(
                 "INJECTION: Excessive bracket nesting — potential obfuscated query"
             )
@@ -460,8 +473,10 @@ class SQLValidationService:
                     f"Prohibited AST node detected: {blocked_type.__name__}"
                 )
 
-        # b) Regex-level: scan normalised upper-case string
-        sql_upper = sql.upper()
+        # b) Regex-level: scan a comment/string-stripped, upper-cased copy so
+        #    keywords appearing inside literals or comments (e.g. ILIKE
+        #    '%create%' or "-- create the cohort") do not false-positive.
+        sql_upper = _strip_comments_and_strings(sql).upper()
         for kw, pattern in _BLOCKED_KW_RE.items():
             if pattern.search(sql_upper):
                 result.add_violation(f"Prohibited keyword: {kw}")

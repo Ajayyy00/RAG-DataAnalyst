@@ -28,6 +28,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         debug=settings.app_debug,
     )
 
+    # ── Database security validation (fail-closed on broken isolation) ─────────
+    from app.db.startup_checks import run_startup_security_checks
+
+    await run_startup_security_checks()
+
     # Schema → ChromaDB indexing (incremental, hash-based; non-fatal)
     try:
         from app.db.session import AsyncSessionLocal
@@ -132,14 +137,20 @@ def create_application() -> FastAPI:
     # ── CORS ──────────────────────────────────────────────────
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=(
-            ["https://healthcopilot.internal"] if not settings.app_debug else []
-        ),
+        # Production: explicit allow-list from CORS_ALLOWED_ORIGINS.
+        # Debug: any localhost port via regex. Credentials require exact origins
+        # (never "*"), which the allow-list satisfies.
+        allow_origins=settings.cors_origins_list if not settings.app_debug else [],
         allow_origin_regex=r"http://localhost:\d+" if settings.app_debug else None,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # ── Security Response Headers (outermost — wraps every response) ──────────
+    from app.middleware.security_headers import SecurityHeadersMiddleware
+
+    app.add_middleware(SecurityHeadersMiddleware)
 
     # ── Audit Logging ─────────────────────────────────────────
     from app.middleware.audit import AuditLogMiddleware

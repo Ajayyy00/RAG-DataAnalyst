@@ -40,11 +40,18 @@ class SQLOptimizationEngine:
         Executes an EXPLAIN (FORMAT JSON) to retrieve the query execution plan.
         We do not use ANALYZE to avoid executing a potentially very slow query here,
         relying on PostgreSQL's cost estimator instead.
+
+        The EXPLAIN runs on the least-privilege READ-ONLY session (never the
+        passed privileged request session) so even plan inspection of
+        AI-generated SQL cannot touch write-capable credentials.
         """
+        from app.db.session import ReadOnlySessionLocal
+
         try:
-            # We must wrap in a transaction or just execute, it's a read-only EXPLAIN
-            result = await db.execute(text(f"EXPLAIN (FORMAT JSON) {sql}"))
-            plan_data = result.scalar()
+            async with ReadOnlySessionLocal() as ro:
+                await ro.execute(text("SET TRANSACTION READ ONLY"))
+                result = await ro.execute(text(f"EXPLAIN (FORMAT JSON) {sql}"))
+                plan_data = result.scalar()
 
             # plan_data is typically a list containing a single dictionary
             if isinstance(plan_data, str):

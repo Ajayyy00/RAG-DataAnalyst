@@ -4,6 +4,8 @@ from typing import List
 import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from app.core.security import verify_token
+
 log = structlog.get_logger(__name__)
 router = APIRouter()
 
@@ -55,6 +57,20 @@ manager = ConnectionManager()
 
 @router.websocket("/analytics")
 async def websocket_endpoint(websocket: WebSocket):
+    # ── Authentication (HttpOnly cookie preferred, query param fallback) ──────
+    # This stream carries clinical events; reject unauthenticated clients
+    # BEFORE accepting the socket.
+    from app.config import get_settings
+
+    settings = get_settings()
+    token = websocket.cookies.get(settings.cookie_access_name) or (
+        websocket.query_params.get("token")
+    )
+    payload = verify_token(token) if token else None
+    if not payload or payload.get("type") != "access":
+        await websocket.close(code=4001)
+        return
+
     await manager.connect(websocket)
     try:
         while True:

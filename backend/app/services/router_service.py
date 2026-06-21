@@ -9,6 +9,7 @@ the expensive database execution and LLM Text-to-SQL generation.
 from __future__ import annotations
 
 import re
+
 import httpx
 import structlog
 
@@ -21,7 +22,7 @@ CONVERSATIONAL_KEYWORDS = [
     r"^(hello|hi|hey|greetings|good\s+morning|good\s+afternoon|good\s+evening)\b",
     r"^(who\s+are\s+you|what\s+is\s+your\s+name|what\s+can\s+you\s+do)\b",
     r"^(help|help\s+me|show\s+help|info|how\s+to\s+use)\b",
-    r"^(clear\s+chat|reset|restart|thank\s+you|thanks|bye|goodbye)\b"
+    r"^(clear\s+chat|reset|restart|thank\s+you|thanks|bye|goodbye)\b",
 ]
 CONVERSATIONAL_RE = re.compile("|".join(CONVERSATIONAL_KEYWORDS), re.IGNORECASE)
 
@@ -81,7 +82,10 @@ class RouterService:
                 return "clinical_query"
             return "conversational"
         except Exception as exc:
-            log.warning("LLM intent classification failed, falling back to clinical_query", error=str(exc))
+            log.warning(
+                "LLM intent classification failed, falling back to clinical_query",
+                error=str(exc),
+            )
             return "clinical_query"
 
     async def close(self) -> None:

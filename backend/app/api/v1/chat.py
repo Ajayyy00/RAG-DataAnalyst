@@ -74,6 +74,7 @@ async def chat_query(
 
     # ── 2.5. Intent Routing ────────────────────────────────────
     from app.services.router_service import RouterService
+
     router_svc = RouterService()
     try:
         intent = await router_svc.classify_intent(request.question)
@@ -82,6 +83,7 @@ async def chat_query(
 
     if intent == "conversational":
         import httpx
+
         async with httpx.AsyncClient(
             base_url=settings.llm_base_url,
             headers={
@@ -352,6 +354,7 @@ async def chat_query_agentic(
     async def event_stream():
         # Check classification
         from app.services.router_service import RouterService
+
         router_svc = RouterService()
         try:
             intent = await router_svc.classify_intent(request.question)
@@ -361,6 +364,7 @@ async def chat_query_agentic(
         if intent == "conversational":
             yield f"data: {json.dumps({'type': 'progress', 'agent': 'intent_router', 'status': 'conversational_matched'})}\n\n"
             import httpx
+
             async with httpx.AsyncClient(
                 base_url=settings.llm_base_url,
                 headers={
@@ -389,7 +393,9 @@ async def chat_query_agentic(
                     },
                 )
                 response.raise_for_status()
-                direct_reply = response.json()["choices"][0]["message"]["content"].strip()
+                direct_reply = response.json()["choices"][0]["message"][
+                    "content"
+                ].strip()
 
             await history_svc.save_message(
                 session_id=session.id,
@@ -440,6 +446,22 @@ async def chat_query_agentic(
         if not final_sql:
             yield f"data: {json.dumps({'type': 'error', 'message': 'Failed to generate a valid SQL query.'})}\n\n"
             return
+
+        # ── Defense-in-depth: re-validate before execution ───────
+        # Never trust the agentic graph's internal validation alone — re-run the
+        # safety gate here so unvalidated SQL can never reach the database.
+        revalidation = SQLValidationService().validate(final_sql)
+        if not revalidation.is_valid:
+            await history_svc.save_message(
+                session_id=session.id,
+                role="assistant",
+                content=f"SQL validation failed: {'; '.join(revalidation.violations)}",
+                generated_sql=final_sql,
+                sql_valid=False,
+            )
+            yield f"data: {json.dumps({'type': 'error', 'message': 'The generated SQL did not pass safety validation.'})}\n\n"
+            return
+        final_sql = revalidation.normalized_sql
 
         # Start explanation generation in the background
         explain_task = asyncio.create_task(

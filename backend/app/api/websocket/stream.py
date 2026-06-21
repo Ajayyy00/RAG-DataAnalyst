@@ -17,6 +17,7 @@ from app.services.conversation_history_service import ConversationHistoryService
 from app.services.llm_explanation_service import LLMExplanationService
 from app.services.query_execution_service import QueryExecutionService
 from app.services.rag_service import RAGService
+from app.services.security_layer import AISecurityLayer
 from app.services.sql_validation_service import SQLValidationService
 from app.services.text_to_sql_service import TextToSQLService
 
@@ -35,18 +36,21 @@ async def stream_query(ws: WebSocket, session_id: uuid.UUID) -> None:
     """Stream the full NL→SQL pipeline over a WebSocket connection."""
     await ws.accept()
 
-    # ── Auth via token query param ────────────────────────────
-    token = ws.query_params.get("token")
+    # ── Auth: HttpOnly cookie (preferred) or token query param ────────────────
+    token = ws.cookies.get(settings.cookie_access_name) or ws.query_params.get("token")
     if not token:
         await _send(ws, "error", {"message": "Missing authentication token"})
         await ws.close(code=4001)
         return
 
     payload = verify_token(token)
-    if not payload:
+    if not payload or payload.get("type") != "access":
         await _send(ws, "error", {"message": "Invalid or expired token"})
         await ws.close(code=4001)
         return
+
+    user_role = payload.get("role", "analyst")
+    user_id = payload.get("sub")
 
     try:
         while True:
@@ -70,7 +74,9 @@ async def stream_query(ws: WebSocket, session_id: uuid.UUID) -> None:
                     await _send(ws, "status", {"step": "retrieving_schema"})
                     rag = RAGService()
                     try:
-                        schema_context = rag.retrieve_schema_context(question)
+                        schema_context = await rag.retrieve_schema_context(
+                            question, user_role=user_role
+                        )
                     except Exception:
                         schema_context = ""
 
@@ -85,7 +91,9 @@ async def stream_query(ws: WebSocket, session_id: uuid.UUID) -> None:
 
                     # ── Validation ───────────────────────────
                     validator = SQLValidationService()
-                    is_valid, violations, normalized = validator.validate(sql)
+                    # validate() returns a ValidationResult dataclass (not a
+                    # tuple) — use the legacy 3-tuple shim for unpacking.
+                    is_valid, violations, normalized = validator.validate_legacy(sql)
                     await _send(
                         ws,
                         "sql_validated",
@@ -104,7 +112,14 @@ async def stream_query(ws: WebSocket, session_id: uuid.UUID) -> None:
                     await _send(ws, "status", {"step": "executing_query"})
                     executor = QueryExecutionService(db)
                     results = await executor.execute(
-                        normalized, max_rows=options.get("max_rows", 500)
+                        normalized,
+                        max_rows=options.get("max_rows", 500),
+                        user_role=user_role,
+                        user_id=user_id,
+                    )
+                    # ── Security Egress: PHI redaction by role ──
+                    results["rows"] = AISecurityLayer.redact_phi(
+                        results["rows"], user_role
                     )
                     await _send(
                         ws,

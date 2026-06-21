@@ -1,0 +1,53 @@
+groups:
+  - name: healthcare-copilot-availability
+    rules:
+      - alert: BackendDown
+        expr: up{job="healthcare-copilot-backend"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Backend API is down"
+          description: "Prometheus cannot scrape the backend for >2m."
+
+      - alert: PrometheusTargetMissing
+        expr: up == 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "A scrape target is down ({{ $labels.job }})"
+
+  - name: healthcare-copilot-latency-errors
+    rules:
+      # >5% of requests returning 5xx over 5 minutes.
+      - alert: HighServerErrorRate
+        expr: |
+          sum(rate(http_request_duration_seconds_count{status="5xx"}[5m]))
+            / clamp_min(sum(rate(http_request_duration_seconds_count[5m])), 1) > 0.05
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "High 5xx error rate (>5%)"
+          description: "{{ $value | humanizePercentage }} of requests are failing."
+
+      # p95 API latency budget (excludes LLM-bound chat/dashboard handlers ideally;
+      # tune handler filters as needed).
+      - alert: HighRequestLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 5
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "API p95 latency > 5s"
+          description: "p95 request latency is {{ $value }}s over the last 5m."
+
+      # LLM generation latency degradation.
+      - alert: HighLLMGenerationLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(llm_generation_duration_seconds_bucket[10m])) by (le)) > 30
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "LLM p95 generation latency > 30s"
+          description: "Upstream LLM is slow; user queries will time out."

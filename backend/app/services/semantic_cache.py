@@ -22,7 +22,9 @@ log = structlog.get_logger(__name__)
 class SemanticCache:
     """Redis-backed Semantic Query Cache using Sentence Transformers."""
 
-    def __init__(self, redis_client: Optional[Redis] = None, threshold: float = 0.92) -> None:
+    def __init__(
+        self, redis_client: Optional[Redis] = None, threshold: float = 0.92
+    ) -> None:
         self.redis = redis_client
         self.threshold = threshold
         self.embedder = EmbeddingService()
@@ -48,7 +50,9 @@ class SemanticCache:
                 return None
 
             # 2. Embed new question
-            q_emb = np.array(await self.embedder.encode_single_async(question, normalize=True))
+            q_emb = np.array(
+                await self.embedder.encode_single_async(question, normalize=True)
+            )
 
             # 3. Calculate similarity (dot product of normalized vectors)
             best_score = -1.0
@@ -64,10 +68,20 @@ class SemanticCache:
                     best_sql = entry["sql"]
                     best_match = entry["question"]
 
-            log.info("Semantic cache search completed", best_score=best_score, best_match=best_match, threshold=self.threshold)
+            log.info(
+                "Semantic cache search completed",
+                best_score=best_score,
+                best_match=best_match,
+                threshold=self.threshold,
+            )
 
             if best_score >= self.threshold:
-                log.info("Semantic cache HIT", query=question, matched_query=best_match, score=best_score)
+                log.info(
+                    "Semantic cache HIT",
+                    query=question,
+                    matched_query=best_match,
+                    score=best_score,
+                )
                 return best_sql
 
         except Exception as e:
@@ -96,16 +110,12 @@ class SemanticCache:
                     break
 
             if not exists:
-                new_entry = {
-                    "question": question,
-                    "sql": sql,
-                    "embedding": q_emb
-                }
+                new_entry = {"question": question, "sql": sql, "embedding": q_emb}
                 entries.insert(0, new_entry)
 
             # Cap cache size
             if len(entries) > self.max_cache_size:
-                entries = entries[:self.max_cache_size]
+                entries = entries[: self.max_cache_size]
 
             await self.redis.set(self.redis_key, json.dumps(entries))
             log.info("Saved query to semantic cache", query_preview=question[:80])

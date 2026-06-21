@@ -6,7 +6,7 @@ import { useAuthStore } from '../../store/authStore'
 import { useSessionStore } from '../../store/sessionStore'
 import { useChatStore } from '../../store/chatStore'
 import { authApi } from '../../api/auth'
-import { DEMO_USER, DEMO_TOKEN, DEMO_SESSIONS, DEMO_MESSAGES } from '../../data/mockData'
+import { DEMO_USER, DEMO_SESSIONS, DEMO_MESSAGES } from '../../data/mockData'
 import toast from 'react-hot-toast'
 
 const DEMO_ACCOUNTS = [
@@ -31,7 +31,7 @@ export default function LoginForm() {
 
   /* ── Demo mode (no backend) ────────────────────────────── */
   const handleDemo = () => {
-    login(DEMO_USER, DEMO_TOKEN)
+    login(DEMO_USER)
     setSessions(DEMO_SESSIONS)
     setActiveSession(DEMO_SESSIONS[0].id)
     loadMessages(DEMO_MESSAGES)
@@ -42,13 +42,11 @@ export default function LoginForm() {
   /* ── Real login ─────────────────────────────────────────── */
   const mutation = useMutation({
     mutationFn: () => authApi.login(form.email, form.password),
-    onSuccess: async (res) => {
-      const { access_token } = res.data
-      const { default: api } = await import('../../api/axios')
-      const profile = await api.get('/auth/me', {
-        headers: { Authorization: `Bearer ${access_token}` },
-      })
-      login(profile.data, access_token)
+    onSuccess: async () => {
+      // Tokens were set as HttpOnly cookies by /auth/login; fetch the profile
+      // using those cookies (withCredentials) — no token handling in JS.
+      const profile = await authApi.me()
+      login(profile.data)
       toast.success(`Welcome back, ${profile.data.first_name || profile.data.email}!`)
       navigate('/chat')
     },

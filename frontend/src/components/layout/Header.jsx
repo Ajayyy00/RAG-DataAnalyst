@@ -10,8 +10,7 @@ const PAGE = {
 export default function Header() {
   const { pathname } = useLocation()
   const user  = useAuthStore((s) => s.user)
-  const token = useAuthStore((s) => s.token)
-  const isDemo = token === 'demo-jwt-token-not-real'
+  const isDemo = user?.id === 'demo-user-001'
   const title = Object.entries(PAGE).find(([p]) => pathname.startsWith(p))?.[1] || 'Copilot'
 
   return (

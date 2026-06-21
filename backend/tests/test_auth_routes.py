@@ -29,10 +29,11 @@ def user_token(sample_user):
 
 # ── /auth/me ──────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_get_me_returns_user_profile(sample_user, user_token):
+    from app.dependencies import get_current_user, get_db, get_redis
     from app.main import app
-    from app.dependencies import get_db, get_redis, get_current_user
 
     mock_db = AsyncMock()
     mock_redis = AsyncMock()
@@ -61,10 +62,11 @@ async def test_get_me_returns_user_profile(sample_user, user_token):
 
 # ── Unauthenticated access ────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_protected_route_requires_auth():
-    from app.main import app
     from app.dependencies import get_db, get_redis
+    from app.main import app
 
     mock_db = AsyncMock()
     mock_redis = AsyncMock()
@@ -84,8 +86,8 @@ async def test_protected_route_requires_auth():
 
 @pytest.mark.asyncio
 async def test_invalid_bearer_token_rejected():
-    from app.main import app
     from app.dependencies import get_db, get_redis
+    from app.main import app
 
     mock_db = AsyncMock()
     mock_redis = AsyncMock()
@@ -106,6 +108,7 @@ async def test_invalid_bearer_token_rejected():
 
 # ── Security utility tests (pure unit — no HTTP) ──────────────────────────────
 
+
 class TestSecurityUtils:
     def test_hash_and_verify_password(self):
         pw = "MySecurePassword42!"
@@ -125,25 +128,37 @@ class TestSecurityUtils:
 
     def test_access_token_contains_sub_and_type(self):
         from jose import jwt
+
         from app.config import get_settings
+
         settings = get_settings()
         uid = str(uuid.uuid4())
         token = create_access_token({"sub": uid, "role": "analyst"})
-        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        payload = jwt.decode(
+            token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm]
+        )
         assert payload["sub"] == uid
         assert payload["type"] == "access"
         assert "exp" in payload
 
     def test_expired_token_fails_verification(self):
         from datetime import timedelta
+
         from app.core.security import verify_token
-        token = create_access_token({"sub": "test"}, expires_delta=timedelta(seconds=-1))
+
+        token = create_access_token(
+            {"sub": "test"}, expires_delta=timedelta(seconds=-1)
+        )
         payload = verify_token(token)
         assert payload is None
 
     def test_token_with_wrong_secret_fails(self):
-        from app.core.security import verify_token
         from jose import jwt
+
+        from app.core.security import verify_token
+
         # Sign with a different key
-        bad_token = jwt.encode({"sub": "x", "exp": 9999999999}, "wrong-secret", algorithm="HS256")
+        bad_token = jwt.encode(
+            {"sub": "x", "exp": 9999999999}, "wrong-secret", algorithm="HS256"
+        )
         assert verify_token(bad_token) is None

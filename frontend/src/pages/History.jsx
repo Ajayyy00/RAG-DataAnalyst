@@ -8,9 +8,9 @@ import { MessageSquare, ArrowRight } from 'lucide-react'
 
 export default function History() {
   const navigate = useNavigate()
-  const token = useAuthStore((s) => s.token)
+  const user = useAuthStore((s) => s.user)
   const storeSessions = useSessionStore((s) => s.sessions)
-  const isDemo = token === 'demo-jwt-token-not-real'
+  const isDemo = user?.id === 'demo-user-001'
 
   const { data, isLoading } = useQuery({
     queryKey: ['sessions'],

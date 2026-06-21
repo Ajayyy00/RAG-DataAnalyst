@@ -8,7 +8,7 @@ import structlog
 from fastapi import APIRouter, Query, Response, status
 from sqlalchemy import func, select, update
 
-from app.db.models.copilot import CopilotMessage, NLSQLPair
+from app.db.models.copilot import CopilotMessage, CopilotSession, NLSQLPair
 from app.dependencies import CurrentAdmin, CurrentUser, DbSession
 from app.schemas.finetune import (
     ExportRequest,
@@ -31,9 +31,15 @@ async def submit_feedback(
     current_user: CurrentUser,
     db: DbSession,
 ) -> Dict[str, Any]:
-    # Fetch the message to validate it belongs to the user's session
+    # Fetch the message AND verify it belongs to one of the caller's own
+    # sessions (prevents IDOR: submitting feedback on another user's messages).
     msg_result = await db.execute(
-        select(CopilotMessage).where(CopilotMessage.id == data.message_id)
+        select(CopilotMessage)
+        .join(CopilotSession, CopilotMessage.session_id == CopilotSession.id)
+        .where(
+            CopilotMessage.id == data.message_id,
+            CopilotSession.user_id == current_user.id,
+        )
     )
     message = msg_result.scalar_one_or_none()
     if not message or not message.generated_sql:

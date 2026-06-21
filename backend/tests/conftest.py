@@ -97,8 +97,9 @@ def admin_token(admin_user):
 async def async_client(mock_db, mock_redis, analyst_user, analyst_token):
     """ASGI test client with DB + Redis + auth dependency-overridden."""
     from httpx import ASGITransport, AsyncClient
+
+    from app.dependencies import get_current_user, get_db, get_redis
     from app.main import app
-    from app.dependencies import get_db, get_redis, get_current_user
 
     app.dependency_overrides[get_db] = lambda: mock_db
     app.dependency_overrides[get_redis] = lambda: mock_redis
