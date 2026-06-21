@@ -20,7 +20,32 @@ from prometheus_client import Counter, Histogram
 from app.config import get_settings
 from app.core.exceptions import LLMServiceError
 from app.services.rag_service import RAGService
-from app.services.sql_validation_service import SQLValidationService
+from app.services.sql_validation_service import ALLOWED_TABLES, SQLValidationService
+
+# Authoritative schema guardrails injected into the planning + generation prompts
+# so the model targets REAL tables/columns even when RAG context is thin/empty
+# (otherwise it invents identifiers that fail the table allow-list validator).
+SCHEMA_GUARDRAILS = (
+    "## Database (PostgreSQL) — use ONLY these tables and columns\n"
+    "patients(id, mrn, first_name, last_name, date_of_birth, gender, race, ethnicity, zip_code, insurance_type)\n"
+    "encounters(id, patient_id, provider_id, department_id, encounter_type, admit_date, discharge_date, drg_code, total_charge, total_payment)\n"
+    "diagnoses(id, encounter_id, patient_id, icd10_code, icd10_desc, diagnosis_type, diagnosis_date, is_chronic)\n"
+    "procedures(id, encounter_id, patient_id, cpt_code, cpt_desc, procedure_date, provider_id, quantity, charge_amount)\n"
+    "medications(id, encounter_id, patient_id, drug_name, ndc_code, rxnorm_code, dose, route, frequency, start_date, end_date, prescriber_id)\n"
+    "lab_results(id, encounter_id, patient_id, loinc_code, test_name, result_value, numeric_value, unit, abnormal_flag, result_date)\n"
+    "vital_signs(id, encounter_id, patient_id, recorded_at, systolic_bp, diastolic_bp, heart_rate, temperature_f, spo2_pct)\n"
+    "claims(id, encounter_id, patient_id, claim_type, payer_name, billed_amount, allowed_amount, paid_amount, claim_status, submission_date)\n"
+    "readmissions(id, index_encounter_id, readmit_encounter_id, patient_id, days_to_readmit, readmit_reason)\n"
+    "providers(id, npi, first_name, last_name, specialty, department_id)\n"
+    "departments(id, name, dept_type, facility_id)\n"
+    "facilities(id, name, city, state, facility_type)\n"
+    f"\nAllowed tables (NEVER reference any other table): {', '.join(sorted(ALLOWED_TABLES))}.\n"
+    "## Hard rules\n"
+    "- Output ONLY a single read-only SELECT (or WITH ... SELECT). No DML/DDL, no semicolon-separated statements.\n"
+    "- Always include a LIMIT (default 100). Use explicit JOIN ... ON. Use ILIKE for text matching.\n"
+    "- Use DATE_TRUNC for time grouping; CURRENT_DATE - INTERVAL 'N months' for recent windows.\n"
+    "- 'this month' => DATE_TRUNC('month', <date_col>) = DATE_TRUNC('month', CURRENT_DATE).\n"
+)
 
 log = structlog.get_logger(__name__)
 settings = get_settings()
@@ -149,6 +174,7 @@ class AgenticSQLService:
 
             sys_msg = SystemMessage(
                 content=f"You are a SQL planning assistant. Analyze the user's question and the provided database schema.\n"
+                f"{SCHEMA_GUARDRAILS}\n"
                 f"{rbac_instruction}\n"
                 f"Output a concise step-by-step plan for the necessary SQL query. "
                 f"Identify the required tables, JOIN conditions, WHERE filters, and aggregation needs."
@@ -166,7 +192,8 @@ class AgenticSQLService:
             log.info("Running Generation Agent", retry=state.get("retry_count", 0))
 
             sys_msg = SystemMessage(
-                content="You are an expert PostgreSQL developer. Write the raw SQL query based on the plan and schema. "
+                content="You are an expert PostgreSQL developer. Write the raw SQL query based on the plan and schema.\n"
+                f"{SCHEMA_GUARDRAILS}\n"
                 "Output ONLY the SQL code without markdown fences or explanations. "
                 "Use proper table aliases and explicit JOINs. Include a LIMIT 100 clause."
             )
@@ -337,9 +364,18 @@ class AgenticSQLService:
                     "execution_plan": last_state.get("execution_plan", {}),
                 }
             else:
+                reason = last_state.get("validation_errors") or "no SQL produced"
+                log.warning(
+                    "Agentic generation exhausted retries without valid SQL",
+                    last_errors=reason,
+                    last_draft=(last_state.get("sql_draft") or "")[:300],
+                )
                 yield {
                     "type": "error",
-                    "message": "Could not generate a SQL query that passed safety validation.",
+                    "message": (
+                        "Could not generate a SQL query that passed safety "
+                        f"validation. Last issue: {reason}"
+                    ),
                 }
 
         except Exception as e:
