@@ -55,7 +55,7 @@ settings = get_settings()
 
 MAX_PREVIEW_ROWS = 30  # rows sent to LLM (avoid context overflow)
 MAX_DISTINCT_SHOWN = 10  # distinct values shown per column in profile
-INSIGHT_MAX_TOKENS = 1200
+INSIGHT_MAX_TOKENS = 2000  # Increased to prevent JSON truncation
 INSIGHT_TEMPERATURE = 0.25  # Low temp → consistent, factual clinical output
 
 
@@ -70,7 +70,12 @@ Core principles:
 - Be clinically relevant: relate findings to patient safety, quality, and cost.
 - Be conservative: only flag anomalies you can support with the data.
 - Never fabricate data or make clinical diagnoses.
-- Confidence should reflect data richness (more rows → higher confidence).
+
+Confidence level rules (apply these exactly):
+- "high"  : >= 100 rows OR data shows clear statistical patterns with low nulls
+- "medium": 10-99 rows OR data is clear but limited in scope
+- "low"   : < 10 rows OR > 30% null values OR data is highly ambiguous
+NOTE: 10-99 rows with clean data is ALWAYS at least "medium". Do NOT rate "low" just because the dataset is small if it answers the question clearly.
 
 You MUST respond with ONLY a valid JSON object matching this exact schema:
 {
@@ -541,11 +546,14 @@ class FallbackInsightEngine:
             f"What is the 30-day trend for the top metric?",
         ]
 
-        confidence = (
-            "high"
-            if profile.row_count >= 100
-            else "medium" if profile.row_count >= 10 else "low"
-        )
+        # Confidence: based on row count and data completeness
+        null_heavy = any(cp.null_pct > 30 for cp in profile.columns)
+        if profile.row_count >= 100 and not null_heavy:
+            confidence = "high"
+        elif profile.row_count >= 10:
+            confidence = "medium"
+        else:
+            confidence = "low"
 
         summary_parts = [f"The query returned {profile.row_count:,} rows."]
         if trends:
@@ -611,6 +619,18 @@ class InsightsEngine:
             async with LlamaClient() as llm:
                 raw = await llm.complete(user_message)
             report = self._parser.parse(raw)
+
+            # ── Post-processing: correct over-conservative confidence ──────────
+            # The LLM sometimes ignores the numeric thresholds in the prompt.
+            # Apply data-driven correction: >= 100 rows → high, >= 10 → medium.
+            profile = self._profiler.profile(columns, rows)
+            null_heavy = any(cp.null_pct > 30 for cp in profile.columns)
+            if profile.row_count >= 100 and not null_heavy and report.confidence == "low":
+                report.confidence = "high"
+            elif profile.row_count >= 10 and report.confidence == "low":
+                report.confidence = "medium"
+            # ─────────────────────────────────────────────────────────────────
+
             logger.info(
                 "AI insight report generated",
                 question_preview=question[:60],
