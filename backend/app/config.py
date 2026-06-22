@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from typing import Optional
+from urllib.parse import quote, unquote, urlsplit
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -49,6 +50,29 @@ class Settings(BaseSettings):
 
     # Require a *distinct* read-only role in production (fail closed at startup).
     require_readonly_role: bool = False
+
+    # ── Supabase (managed PostgreSQL) ─────────────────────────
+    # Paste the full connection string from Supabase → Project Settings →
+    # Database → Connection string. When set it OVERRIDES the discrete
+    # postgres_* fields above (host/port/user/password/db are parsed from it).
+    # Recommended: the *Session pooler* URI (…pooler.supabase.com:5432) for a
+    # long-running pooled backend; the *Transaction pooler* (…:6543) also works
+    # and auto-disables prepared-statement caching (see asyncpg_connect_args).
+    #   postgresql://postgres.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:5432/postgres
+    supabase_db_url: Optional[str] = None
+    # Optional Supabase REST/Storage/Auth client (not required for analytics).
+    supabase_url: Optional[str] = None
+    supabase_anon_key: Optional[str] = None
+    supabase_service_role_key: Optional[str] = None
+    # Force TLS on the DB connection. Auto-enabled for *.supabase.* hosts.
+    db_require_ssl: bool = False
+    # libpq sslmode for the DB connection. "require" = encrypt without chain
+    # verification (Supabase default; survives missing CA / TLS middleboxes).
+    # Use "verify-full" for strict verification when a CA is trusted locally.
+    db_ssl_mode: str = Field(
+        default="require",
+        pattern="^(disable|allow|prefer|require|verify-ca|verify-full)$",
+    )
 
     # ── Redis ─────────────────────────────────────────────────
     redis_url: str = "redis://localhost:6379"
@@ -112,25 +136,99 @@ class Settings(BaseSettings):
 
     # ── Computed Properties ──────────────────────────────────
     @property
-    def database_url(self) -> str:
+    def db_components(self) -> tuple[str, str, str, int, str]:
+        """Resolve (user, password, host, port, db).
+
+        When ``supabase_db_url`` is set it is the single source of truth and the
+        discrete ``postgres_*`` fields are ignored; otherwise fall back to them.
+        """
+        if self.supabase_db_url:
+            parts = urlsplit(self.supabase_db_url)
+            return (
+                unquote(parts.username or self.postgres_user),
+                unquote(parts.password or self.postgres_password),
+                parts.hostname or self.postgres_host,
+                parts.port or 5432,
+                (parts.path.lstrip("/") or self.postgres_db),
+            )
         return (
-            f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
-            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            self.postgres_user,
+            self.postgres_password,
+            self.postgres_host,
+            self.postgres_port,
+            self.postgres_db,
+        )
+
+    @property
+    def database_url(self) -> str:
+        user, password, host, port, db = self.db_components
+        return (
+            f"postgresql+asyncpg://{quote(user, safe='')}:{quote(password, safe='')}"
+            f"@{host}:{port}/{db}"
         )
 
     @property
     def sync_database_url(self) -> str:
+        user, password, host, port, db = self.db_components
         return (
-            f"postgresql+psycopg2://{self.postgres_user}:{self.postgres_password}"
-            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            f"postgresql+psycopg2://{quote(user, safe='')}:{quote(password, safe='')}"
+            f"@{host}:{port}/{db}"
         )
+
+    @property
+    def db_uses_ssl(self) -> bool:
+        """TLS is required for Supabase and any explicitly-flagged host."""
+        host = self.db_components[2].lower()
+        return (
+            self.db_require_ssl or "supabase." in host or host.endswith(".supabase.co")
+        )
+
+    @property
+    def db_is_transaction_pooler(self) -> bool:
+        """Supabase transaction pooler runs on :6543 and forbids server-side
+        prepared statements, so caching must be disabled."""
+        _, _, host, port, _ = self.db_components
+        return port == 6543 and "pooler.supabase.com" in host.lower()
+
+    @property
+    def asyncpg_ssl(self):
+        """asyncpg ``ssl`` value: an sslmode string when TLS is used, else None.
+
+        Defaults to ``require`` (encrypt, no chain verification) — Supabase ships
+        no CA bundle and TLS-intercepting middleboxes/antivirus on the client
+        break full verification. Set ``DB_SSL_MODE=verify-full`` (with a CA in the
+        system trust store) for strict verification.
+        """
+        return self.db_ssl_mode if self.db_uses_ssl else None
+
+    @property
+    def asyncpg_connect_args(self) -> dict:
+        """connect_args for create_async_engine (asyncpg driver).
+
+        - Enables TLS for Supabase (sslmode via ``asyncpg_ssl``).
+        - On the transaction pooler, disables BOTH asyncpg's and SQLAlchemy's
+          prepared-statement caches and uses unique statement names, which is
+          mandatory behind pgBouncer/Supavisor transaction pooling.
+        """
+        args: dict = {}
+        if self.db_uses_ssl:
+            args["ssl"] = self.db_ssl_mode
+        if self.db_is_transaction_pooler:
+            import uuid as _uuid
+
+            args["statement_cache_size"] = 0
+            args["prepared_statement_cache_size"] = 0
+            args["prepared_statement_name_func"] = (
+                lambda: f"__asyncpg_{_uuid.uuid4()}__"
+            )
+        return args
 
     @property
     def has_dedicated_readonly_role(self) -> bool:
         """True when a separate read-only DB user is configured."""
         return bool(
             self.readonly_postgres_user
-            and self.readonly_postgres_user != self.postgres_user
+            and self.readonly_postgres_user != self.db_components[0]
         )
 
     @property
@@ -143,12 +241,16 @@ class Settings(BaseSettings):
         configured this falls back to the main credentials (no isolation) — the
         startup validator warns/fails depending on `require_readonly_role`.
         """
-        host = self.readonly_postgres_host or self.postgres_host
-        port = self.readonly_postgres_port or self.postgres_port
-        db = self.readonly_postgres_db or self.postgres_db
-        user = self.readonly_postgres_user or self.postgres_user
-        password = self.readonly_postgres_password or self.postgres_password
-        return f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{db}"
+        base_user, base_password, base_host, base_port, base_db = self.db_components
+        host = self.readonly_postgres_host or base_host
+        port = self.readonly_postgres_port or base_port
+        db = self.readonly_postgres_db or base_db
+        user = self.readonly_postgres_user or base_user
+        password = self.readonly_postgres_password or base_password
+        return (
+            f"postgresql+asyncpg://{quote(user, safe='')}:{quote(password, safe='')}"
+            f"@{host}:{port}/{db}"
+        )
 
     @property
     def is_production(self) -> bool:

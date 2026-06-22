@@ -28,30 +28,54 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         debug=settings.app_debug,
     )
 
+    # ── Wait for the database (resilient to Supabase/pooler cold starts) ───────
+    from app.db.session import wait_for_database
+
+    try:
+        await wait_for_database()
+    except Exception as exc:  # pragma: no cover - startup connectivity
+        logger.error("Database unreachable after retries", error=str(exc))
+        raise
+
     # ── Database security validation (fail-closed on broken isolation) ─────────
     from app.db.startup_checks import run_startup_security_checks
 
     await run_startup_security_checks()
 
     # Schema → ChromaDB indexing (incremental, hash-based; non-fatal)
-    try:
-        from app.db.session import AsyncSessionLocal
-        from app.services.rag_service import RAGService
+    # Includes retry logic to handle ChromaDB startup race condition
+    async def _index_schema_with_retry(delay: float = 0.0) -> None:
+        import asyncio as _asyncio
+        if delay:
+            await _asyncio.sleep(delay)
+        try:
+            from app.db.session import AsyncSessionLocal
+            from app.services.rag_service import RAGService
 
-        rag = RAGService()
-        async with AsyncSessionLocal() as db:
-            result = await rag.index_schema(db=db, force=False)
-        logger.info(
-            "Schema indexed into ChromaDB",
-            indexed=result.get("indexed", 0),
-            skipped=result.get("skipped", 0),
-            total_chunks=result.get("total_chunks", 0),
-        )
-    except Exception as exc:
-        logger.warning(
-            "Schema indexing skipped on startup — ChromaDB or DB unavailable",
-            error=str(exc),
-        )
+            rag = RAGService()
+            async with AsyncSessionLocal() as db:
+                result = await rag.index_schema(db=db, force=True)
+            logger.info(
+                "Schema indexed into ChromaDB",
+                indexed=result.get("indexed", 0),
+                skipped=result.get("skipped", 0),
+                total_chunks=result.get("total_chunks", 0),
+            )
+        except Exception as exc:
+            logger.warning(
+                "Schema indexing failed",
+                error=str(exc),
+                delay_seconds=delay,
+            )
+
+    try:
+        await _index_schema_with_retry(delay=0)
+    except Exception:
+        pass
+
+    # Schedule a background retry after 30s to handle ChromaDB cold-start races
+    import asyncio as _asyncio
+    _asyncio.create_task(_index_schema_with_retry(delay=30))
 
     # Start Kafka Consumer
     from app.db.session import AsyncSessionLocal

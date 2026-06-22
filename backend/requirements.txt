@@ -43,6 +43,7 @@ torch==2.3.1+cpu
 # ── Data Processing ─────────────────────────────────────────
 pandas==2.2.2
 numpy>=1.22.5,<2.0.0   # chromadb 0.5.3 requires numpy<2.0
+Faker==26.0.0          # synthetic healthcare data generation (seeding/)
 
 # ── Utilities ───────────────────────────────────────────────
 python-dotenv==1.0.1

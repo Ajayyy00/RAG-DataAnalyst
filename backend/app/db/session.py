@@ -1,11 +1,25 @@
 """Async SQLAlchemy engine and session factory."""
 
+import structlog
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from app.config import get_settings
 from app.db.base import Base  # noqa: F401  — import so Base knows all models
 
+logger = structlog.get_logger(__name__)
 settings = get_settings()
+
+# Connection arguments are Supabase-aware: TLS for managed hosts, and on the
+# transaction pooler (:6543) prepared-statement caching is disabled. See
+# Settings.asyncpg_connect_args.
+_CONNECT_ARGS = settings.asyncpg_connect_args
 
 # ── Async Engine ──────────────────────────────────────────────────────────────
 engine = create_async_engine(
@@ -16,6 +30,7 @@ engine = create_async_engine(
     max_overflow=20,
     pool_timeout=30,
     pool_recycle=1800,
+    connect_args=_CONNECT_ARGS,
 )
 
 try:
@@ -49,6 +64,7 @@ readonly_engine = create_async_engine(
     max_overflow=10,
     pool_timeout=30,
     pool_recycle=1800,
+    connect_args=_CONNECT_ARGS,
 )
 
 ReadOnlySessionLocal = async_sessionmaker(
@@ -58,6 +74,24 @@ ReadOnlySessionLocal = async_sessionmaker(
     autocommit=False,
     autoflush=False,
 )
+
+
+@retry(
+    retry=retry_if_exception_type(Exception),
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=0.5, min=0.5, max=8),
+    reraise=True,
+)
+async def wait_for_database() -> None:
+    """Ping the database, retrying with exponential backoff.
+
+    Managed/pooled databases (Supabase) can briefly refuse connections during
+    cold starts or pooler restarts; this gives the backend a resilient startup
+    instead of crash-looping. Call from the FastAPI lifespan/startup hook.
+    """
+    async with engine.connect() as conn:
+        await conn.execute(text("SELECT 1"))
+    logger.info("database_connectivity_ok", host=settings.db_components[2])
 
 
 async def create_tables() -> None:

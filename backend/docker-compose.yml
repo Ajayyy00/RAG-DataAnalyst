@@ -43,7 +43,7 @@ services:
 
   # ── ChromaDB ───────────────────────────────────────────────
   chromadb:
-    image: chromadb/chroma:latest
+    image: chromadb/chroma:0.5.23
     container_name: hc_chromadb
     volumes:
       - chroma_data:/chroma/.chroma

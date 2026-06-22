@@ -94,6 +94,9 @@ class Provider(Base):
     )
     first_name: Mapped[str | None] = mapped_column(String(100))
     last_name: Mapped[str | None] = mapped_column(String(100))
+    # Discriminates the kind of clinician so analytics can separate the
+    # physician vs. nursing workforce. Values: physician | nurse | other.
+    provider_type: Mapped[str | None] = mapped_column(String(20), index=True)
     specialty: Mapped[str | None] = mapped_column(String(100))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     department_id: Mapped[uuid.UUID | None] = mapped_column(

@@ -52,8 +52,29 @@ Your role is to convert natural language clinical questions into syntactically c
 - Use ILIKE for case-insensitive text searches.
 - Use COALESCE to handle NULL values in aggregations.
 - Cast types explicitly: CAST(col AS NUMERIC) when mixing types.
-- For ICD-10 code pattern matching use: diagnosis_code ILIKE 'E11%' for diabetes.
+- For ICD-10 code pattern matching use: icd10_code ILIKE 'E11%' for diabetes.
 - Queryable tables: {allowed_tables}
+
+## Critical Table Column Reference
+
+### lab_results columns:
+  id, patient_id, encounter_id, loinc_code, test_name,
+  result_value (varchar), numeric_value (numeric), unit (varchar),
+  reference_low (numeric), reference_high (numeric),
+  abnormal_flag (varchar — often empty; detect abnormality via: numeric_value > reference_high OR numeric_value < reference_low),
+  result_date (timestamptz — use this for date filtering, NOT collected_at),
+  ordering_prov (uuid FK to providers), created_at, updated_at.
+
+### encounters columns:
+  id, patient_id, provider_id, department_id,
+  encounter_type (varchar: 'inpatient'/'outpatient'/'emergency'/'telehealth'),
+  admit_date (timestamptz), discharge_date (timestamptz),
+  discharge_disp, drg_code, drg_description,
+  total_charge (numeric), total_payment (numeric), created_at, updated_at.
+
+### diagnoses columns:
+  id, encounter_id, patient_id, icd10_code (varchar), icd10_desc (text),
+  diagnosis_type (varchar: 'primary'/'secondary'), created_at, updated_at.
 """
 
 # ── Few-shot examples ──────────────────────────────────────────────────────────
@@ -76,16 +97,56 @@ WITH diabetic_patients AS (
       AND EXTRACT(YEAR FROM AGE(p.date_of_birth)) > 60
 ),
 high_glucose AS (
-    SELECT lr.patient_id, AVG(lr.result_value) AS avg_glucose
+    -- NOTE: lab_results uses numeric_value (not result_value) for numeric comparisons
+    -- NOTE: lab_results uses result_date (not collected_at) for date filtering
+    SELECT lr.patient_id, AVG(lr.numeric_value) AS avg_glucose
     FROM lab_results lr
     WHERE lr.loinc_code = '2345-7'            -- Glucose [Mass/volume] in Serum/Plasma
-      AND lr.result_value::NUMERIC > 126       -- ADA threshold for diabetes
+      AND lr.numeric_value > 126              -- ADA threshold for diabetes
+      AND lr.result_date >= CURRENT_DATE - INTERVAL '1 year'
     GROUP BY lr.patient_id
 )
-SELECT dp.first_name, dp.last_name, dp.age, hg.avg_glucose
+SELECT dp.first_name, dp.last_name, dp.age, ROUND(hg.avg_glucose::NUMERIC, 1) AS avg_glucose_mg_dl
 FROM diabetic_patients dp
 JOIN high_glucose hg ON hg.patient_id = dp.id
 ORDER BY hg.avg_glucose DESC
+LIMIT 100;
+
+---
+
+### Example 5 — Lab result abnormality trend over time
+Question: Show the trend of abnormal lab results over the last 90 days.
+
+SQL:
+-- IMPORTANT: abnormal_flag is often empty. Compute abnormality via reference range.
+-- Columns to use: result_date (date filter), numeric_value (numeric), reference_low, reference_high
+WITH daily_abnormal AS (
+    SELECT
+        DATE_TRUNC('day', lr.result_date) AS result_day,
+        COUNT(*) AS total_results,
+        COUNT(
+            CASE
+                WHEN lr.numeric_value IS NOT NULL
+                 AND lr.reference_high IS NOT NULL
+                 AND lr.numeric_value > lr.reference_high
+                THEN 1
+                WHEN lr.numeric_value IS NOT NULL
+                 AND lr.reference_low IS NOT NULL
+                 AND lr.numeric_value < lr.reference_low
+                THEN 1
+            END
+        ) AS abnormal_count
+    FROM lab_results lr
+    WHERE lr.result_date >= CURRENT_DATE - INTERVAL '90 days'
+    GROUP BY DATE_TRUNC('day', lr.result_date)
+)
+SELECT
+    result_day,
+    total_results,
+    abnormal_count,
+    ROUND(abnormal_count::NUMERIC / NULLIF(total_results, 0) * 100, 2) AS abnormal_rate_pct
+FROM daily_abnormal
+ORDER BY result_day ASC
 LIMIT 100;
 
 ---

@@ -15,8 +15,9 @@ import app.db.models  # noqa: F401 — register all models
 config = context.config
 settings = get_settings()
 
-# Override sqlalchemy.url with app settings
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Override sqlalchemy.url with app settings. Escape '%' (e.g. from a URL-encoded
+# password) as '%%' so ConfigParser interpolation doesn't choke on it.
+config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -52,6 +53,8 @@ async def run_async_migrations() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        # Supabase/managed Postgres: pass TLS (and pooler-aware) connect args.
+        connect_args=settings.asyncpg_connect_args,
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)

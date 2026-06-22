@@ -440,3 +440,32 @@ flowchart TD
 **Targets:** RTO ≤ 1h, RPO ≤ 24h (≤ 5 min with WAL/PITR). Derived stores
 (ChromaDB, Neo4j) rebuild from Postgres on startup and are excluded from RPO.
 Full runbook: [DISASTER_RECOVERY.md](DISASTER_RECOVERY.md).
+
+---
+
+## Supabase data platform
+
+The primary datastore can run on **Supabase** (managed PostgreSQL) with no change
+to the application model — Supabase *is* Postgres, so SQLAlchemy/Alembic, RLS, the
+read-only executor role, and Fernet PHI encryption all carry over.
+
+```mermaid
+flowchart LR
+    SPA[React SPA] -->|HTTPS| API[FastAPI backend]
+    API -->|asyncpg + TLS, pooler-aware| SB[(Supabase Postgres / RLS + FORCE)]
+    API -. AI-generated SQL via hc_readonly .-> SB
+    SEED[seeding pipeline / binary COPY] -->|bulk load| SB
+    SB --> RAG[(ChromaDB schema vectors)]
+    SB --> KG[(Neo4j knowledge graph)]
+```
+
+- **Connection:** `SUPABASE_DB_URL` (session or transaction pooler). The backend
+  auto-enables TLS for `*.supabase.*` and, on the transaction pooler (`:6543`),
+  disables prepared-statement caching (`Settings.asyncpg_connect_args`). Startup
+  retries through pooler cold starts (`db.session.wait_for_database`).
+- **Schema parity:** `supabase/migration.sql` is auto-generated from the ORM
+  (`scripts/emit_supabase_sql.py`) and matches `alembic upgrade head` exactly.
+- **Data:** the `seeding/` pipeline streams a 100K-patient / ~6.6M-row synthetic
+  dataset via COPY. See [SUPABASE_SETUP.md](SUPABASE_SETUP.md),
+  [DATA_GENERATION.md](DATA_GENERATION.md), [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md),
+  and [SAMPLE_QUERIES.md](SAMPLE_QUERIES.md).

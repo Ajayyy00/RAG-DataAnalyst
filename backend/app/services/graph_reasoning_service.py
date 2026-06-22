@@ -59,11 +59,20 @@ class GraphReasoningService:
             f"Given this graph schema:\n{NEO4J_SCHEMA}\n"
             "Write ONLY a valid Cypher query that answers the user's question.\n"
             "Do NOT include explanations or markdown fences.\n"
-            "CRITICAL RULES FOR RETURNING GRAPH DATA:\n"
-            "1. You MUST return full nodes and relationships, not just properties.\n"
-            "2. You MUST bind relationships to a variable (e.g., `r`) to return them.\n"
-            "EXAMPLE DO: MATCH (p:Patient)-[r:HAS_DISEASE]->(d:Disease {name: 'Hypertension'}) RETURN p, r, d LIMIT 50\n"
-            "EXAMPLE DON'T: MATCH (p:Patient)-[:HAS_DISEASE]->(d:Disease) RETURN p, d, :HAS_DISEASE\n"
+            "CRITICAL RULES:\n"
+            "1. Return full nodes and relationships, not just properties.\n"
+            "2. Bind relationships to variables (e.g., `[r]`) to return them.\n"
+            "3. NEVER embed the raw user question as a string literal in WHERE clauses.\n"
+            "   Translate the intent: 'which patient has most diseases' means find patients with highest disease count.\n"
+            "4. For 'most', 'top', 'highest count' queries use ORDER BY + LIMIT.\n"
+            "5. Aggregation queries should use MATCH + WITH + ORDER BY + RETURN pattern.\n"
+            "EXAMPLE — 'which patient has most diseases':\n"
+            "  MATCH (p:Patient)-[:HAS_DISEASE]->(d:Disease)\n"
+            "  WITH p, COUNT(d) AS disease_count\n"
+            "  ORDER BY disease_count DESC LIMIT 10\n"
+            "  RETURN p, disease_count\n"
+            "EXAMPLE — graph with edges:\n"
+            "  MATCH (p:Patient)-[r:HAS_DISEASE]->(d:Disease {name: 'Hypertension'}) RETURN p, r, d LIMIT 50\n"
         )
 
         if previous_error:
@@ -88,20 +97,42 @@ class GraphReasoningService:
         if not graph_data:
             return "No relevant graph data was found to answer your question."
 
+        # Truncate data to avoid exceeding LLM token limits (413 errors)
+        # Summarise node counts rather than sending all raw node objects
+        truncated = graph_data[:15]
+        summary_note = (
+            f"(Showing {len(truncated)} of {len(graph_data)} total records)"
+            if len(graph_data) > 15
+            else ""
+        )
+
+        # Strip heavy node property blobs — keep only meaningful fields
+        def _slim(record: dict) -> dict:
+            slimmed = {}
+            for k, v in record.items():
+                if isinstance(v, dict):
+                    # Keep only non-id, non-internal fields
+                    slimmed[k] = {fk: fv for fk, fv in v.items() if fk not in ("id", "element_id")}
+                else:
+                    slimmed[k] = v
+            return slimmed
+
+        slim_data = [_slim(r) for r in truncated]
+
         response = await self.reasoning_llm.ainvoke(
             [
                 SystemMessage(
                     content=(
                         "You are a clinical AI assistant. You are given a user's question "
                         "and the raw results from a healthcare knowledge graph query. "
-                        "Provide a clear, accurate, and concise clinical answer using ONLY the provided data."
+                        "Provide a clear, accurate, and concise clinical answer using ONLY the provided data. "
+                        "Be brief — 3-5 sentences maximum."
                     )
                 ),
                 HumanMessage(
                     content=(
                         f"Question: {question}\n\n"
-                        f"Cypher Query Used: {cypher}\n\n"
-                        f"Graph Results (JSON): {graph_data[:50]}\n\n"
+                        f"Graph Results {summary_note}: {slim_data}\n\n"
                         "Answer:"
                     )
                 ),

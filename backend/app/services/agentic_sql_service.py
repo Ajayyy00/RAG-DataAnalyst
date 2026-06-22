@@ -36,7 +36,7 @@ SCHEMA_GUARDRAILS = (
     "vital_signs(id, encounter_id, patient_id, recorded_at, systolic_bp, diastolic_bp, heart_rate, temperature_f, spo2_pct)\n"
     "claims(id, encounter_id, patient_id, claim_type, payer_name, billed_amount, allowed_amount, paid_amount, claim_status, submission_date)\n"
     "readmissions(id, index_encounter_id, readmit_encounter_id, patient_id, days_to_readmit, readmit_reason)\n"
-    "providers(id, npi, first_name, last_name, specialty, department_id)\n"
+    "providers(id, npi, first_name, last_name, provider_type, specialty, department_id)  -- provider_type is 'physician' or 'nurse'\n"
     "departments(id, name, dept_type, facility_id)\n"
     "facilities(id, name, city, state, facility_type)\n"
     f"\nAllowed tables (NEVER reference any other table): {', '.join(sorted(ALLOWED_TABLES))}.\n"
